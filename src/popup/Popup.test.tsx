@@ -5,11 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Popup } from './Popup'
 
 const query = vi.fn()
+const executeScript = vi.fn()
 
 describe('Popup', () => {
   beforeEach(() => {
     query.mockReset()
-    vi.stubGlobal('chrome', { tabs: { query } })
+    executeScript.mockReset()
+    vi.stubGlobal('chrome', { tabs: { query }, scripting: { executeScript } })
   })
 
   afterEach(() => {
@@ -55,5 +57,50 @@ describe('Popup', () => {
     await user.click(screen.getByRole('button', { name: 'Retry' }))
 
     await screen.findByText('LinkedIn detected ✓')
+  })
+
+  it('shows a read-only primary post context preview', async () => {
+    query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example-activity-123' }])
+    executeScript.mockResolvedValue([
+      {
+        result: {
+          kind: 'success',
+          context: {
+            authorDisplayName: 'Ada Lovelace',
+            originalAuthoredText: 'A useful post.',
+          },
+        },
+      },
+    ])
+
+    render(<Popup />)
+
+    await screen.findByText('LinkedIn detected ✓')
+    expect(await screen.findByText('A useful post.')).toBeInTheDocument()
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
+  })
+
+  it('tells the user to expand collapsed text and retries fresh extraction', async () => {
+    const user = userEvent.setup()
+    query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example-activity-123' }])
+    executeScript
+      .mockResolvedValueOnce([{ result: { kind: 'collapsed-post' } }])
+      .mockResolvedValueOnce([
+        {
+          result: {
+            kind: 'success',
+            context: {
+              authorDisplayName: 'Ada Lovelace',
+              originalAuthoredText: 'Expanded post.',
+            },
+          },
+        },
+      ])
+
+    render(<Popup />)
+    await screen.findByText(/This post is collapsed/)
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    await screen.findByText('Expanded post.')
+    expect(executeScript).toHaveBeenCalledTimes(2)
   })
 })

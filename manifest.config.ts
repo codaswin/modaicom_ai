@@ -5,7 +5,7 @@ export default defineManifest({
   name: 'modaicom',
   version: '0.1.0',
   description: 'AI-assisted LinkedIn responses with the user in control.',
-  permissions: ['activeTab'],
+  permissions: ['activeTab', 'scripting'],
   icons: {
     16: 'icons/icon-16.png',
     32: 'icons/icon-32.png',

@@ -35,6 +35,13 @@ dist/
 build/
 out/
 target/
+*.tsbuildinfo
+
+# Chrome extension packages and local browser profiles
+*.crx
+web-ext-artifacts/
+.chrome/
+chrome-profile/
 *.egg-info/
 *.whl
 *.class
@@ -57,6 +64,7 @@ htmlcov/
 __pycache__/
 *.py[cod]
 .eslintcache
+.vitest/
 .parcel-cache/
 .next/
 .nuxt/
@@ -70,6 +78,12 @@ __pycache__/
 .yarn/install-state.gz
 .gradle/
 
+# Browser and end-to-end test output
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
 # Local databases, logs, and runtime state
 *.db
 *.db-journal
@@ -82,6 +96,11 @@ logs/
 *.seed
 *.stackdump
 *.crash
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
 # Infrastructure state and local deployment output
 .terraform/
@@ -94,6 +113,8 @@ crash.log
 # Editor and IDE state
 .idea/
 .vscode/
+.fleet/
+.history/
 *.code-workspace
 *.swp
 *.swo
@@ -102,8 +123,11 @@ crash.log
 
 # Operating-system metadata
 .DS_Store
+._*
 .AppleDouble
 .LSOverride
+.Spotlight-V100
+.Trashes
 Thumbs.db
 Desktop.ini
 

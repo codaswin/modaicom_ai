@@ -115,3 +115,38 @@ button {
   outline: 3px solid #b9aaff;
   outline-offset: 2px;
 }
+
+.context-panel {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid #ded9ef;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.context-panel p {
+  margin: 0;
+}
+
+.context-panel__author {
+  color: #2d235e;
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.context-panel__text {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.context-panel__metadata {
+  color: #665d80;
+  font-size: 12px;
+}
+
+.context-panel__message {
+  font-size: 13px;
