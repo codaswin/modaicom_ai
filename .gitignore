@@ -1,0 +1,117 @@
+# Reproducible agent dependencies (see skills-lock.json)
+/.agents/skills/
+/.agents/cache/
+
+# Secrets and machine-local configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+.npmrc
+.pypirc
+.netrc
+.aws/
+.ssh/
+*credentials*.json
+*service-account*.json
+
+# Dependency directories and virtual environments
+node_modules/
+vendor/
+.venv/
+venv/
+env/
+.direnv/
+
+# Build output and generated artifacts
+dist/
+build/
+out/
+target/
+*.egg-info/
+*.whl
+*.class
+*.jar
+*.war
+*.ear
+
+# Test, coverage, and tool caches
+coverage/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+.cache/
+__pycache__/
+*.py[cod]
+.eslintcache
+.parcel-cache/
+.next/
+.nuxt/
+.svelte-kit/
+.turbo/
+.vite/
+.npm/
+.pnpm-store/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/install-state.gz
+.gradle/
+
+# Local databases, logs, and runtime state
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.log
+logs/
+*.pid
+*.pid.lock
+*.seed
+*.stackdump
+*.crash
+
+# Infrastructure state and local deployment output
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+.serverless/
+.aws-sam/
+
+# Editor and IDE state
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+.claude/settings.local.json
+
+# Operating-system metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+
+# Temporary files and local scratch directories
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
