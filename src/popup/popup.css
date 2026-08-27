@@ -1,0 +1,117 @@
+:root {
+  color: #1e1b2e;
+  background: #f8f7fc;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+}
+
+button {
+  font: inherit;
+}
+
+.popup {
+  display: grid;
+  gap: 18px;
+  width: 320px;
+  padding: 22px;
+}
+
+.popup__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.popup__header h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.popup__brand-mark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  color: #fff;
+  background: #5b3fd6;
+  border-radius: 9px;
+  font-size: 20px;
+  font-weight: 750;
+  line-height: 1;
+  place-items: center;
+}
+
+.status {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  align-items: center;
+  min-height: 70px;
+  padding: 14px;
+  border: 1px solid #ded9ef;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.status__icon {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ebe8f7;
+  color: #4a358f;
+  font-weight: 800;
+  place-items: center;
+}
+
+.status--linkedin .status__icon {
+  color: #17643a;
+  background: #dff5e9;
+}
+
+.status--other .status__icon {
+  color: #6b4d12;
+  background: #fff1c9;
+}
+
+.status--error .status__icon {
+  color: #9d2929;
+  background: #fde4e4;
+}
+
+.status__message {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.retry-button {
+  justify-self: start;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: #5b3fd6;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.retry-button:hover {
+  background: #4930b7;
+}
+
+.retry-button:focus-visible {
+  outline: 3px solid #b9aaff;
+  outline-offset: 2px;
+}
