@@ -6,6 +6,34 @@ import {
 } from '../features/linkedin-detection/detectCurrentPage'
 import './popup.css'
 
+type PopupState = DetectionResult['kind'] | 'loading'
+
+const statePresentation = {
+  loading: {
+    icon: '◌',
+    message: 'Checking current page…',
+    canRetry: false,
+  },
+  linkedin: {
+    icon: '✓',
+    message: 'LinkedIn detected ✓',
+    canRetry: false,
+  },
+  other: {
+    icon: '↗',
+    message: 'Open LinkedIn to use modaicom.',
+    canRetry: false,
+  },
+  error: {
+    icon: '!',
+    message: 'Unable to detect the current page. Try again.',
+    canRetry: true,
+  },
+} satisfies Record<
+  PopupState,
+  { icon: string; message: string; canRetry: boolean }
+>
+
 export function Popup() {
   const [result, setResult] = useState<DetectionResult | null>(null)
 
@@ -18,17 +46,8 @@ export function Popup() {
     void detectCurrentPage().then(setResult)
   }, [])
 
-  const isLinkedIn = result?.kind === 'linkedin'
-  const isOther = result?.kind === 'other'
-  const isError = result?.kind === 'error'
-  const icon = isLinkedIn ? '✓' : isOther ? '↗' : isError ? '!' : '◌'
-  const message = isLinkedIn
-    ? 'LinkedIn detected ✓'
-    : isOther
-      ? 'Open LinkedIn to use modaicom.'
-      : isError
-        ? 'Unable to detect the current page. Try again.'
-        : 'Checking current page…'
+  const state: PopupState = result?.kind ?? 'loading'
+  const presentation = statePresentation[state]
 
   return (
     <main className="popup">
@@ -39,16 +58,16 @@ export function Popup() {
         <h1>modaicom</h1>
       </header>
       <div
-        className={`status status--${result?.kind ?? 'loading'}`}
+        className={`status status--${state}`}
         role="status"
         aria-live="polite"
       >
         <span className="status__icon" aria-hidden="true">
-          {icon}
+          {presentation.icon}
         </span>
-        <span className="status__message">{message}</span>
+        <span className="status__message">{presentation.message}</span>
       </div>
-      {isError ? (
+      {presentation.canRetry ? (
         <button className="retry-button" onClick={retry}>
           Retry
         </button>
