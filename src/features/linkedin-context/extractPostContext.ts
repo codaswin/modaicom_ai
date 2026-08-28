@@ -68,51 +68,107 @@ export function extractPostContextInPage(
     element.closest(candidateSelector) === candidate ||
     (candidate.matches('article') && !element.closest(candidateSelector))
 
-  const hasSeeMore = Array.from(
-    candidate.querySelectorAll<HTMLElement>('button, a, [role="button"]'),
-  ).some(
-    (control) =>
-      belongsToCandidate(control) &&
-      /\bsee\s+more\b/i.test(control.textContent?.trim() ?? ''),
-  )
+  const bodySelectors = [
+    '[data-testid="post-body"]',
+    '[data-testid="expandable-text-box"]',
+    '[data-test-id="feed-shared-update-v2__description"]',
+    '.feed-shared-update-v2__description',
+    '.feed-shared-inline-show-more-text',
+  ]
+
+  const findElement = (selectors: string[]) => {
+    for (const selector of selectors) {
+      const element = Array.from(
+        candidate.querySelectorAll<HTMLElement>(selector),
+      ).find(belongsToCandidate)
+      if (element) return element
+    }
+    return undefined
+  }
+
+  const normalizeText = (element: Element) => {
+    let rawText = ''
+    const blockTags = new Set([
+      'ADDRESS',
+      'ARTICLE',
+      'ASIDE',
+      'BLOCKQUOTE',
+      'DIV',
+      'FIGCAPTION',
+      'H1',
+      'H2',
+      'H3',
+      'H4',
+      'H5',
+      'H6',
+      'LI',
+      'P',
+      'PRE',
+      'SECTION',
+    ])
+
+    const visit = (node: Node) => {
+      node.childNodes.forEach((child) => {
+        if (child.nodeType === Node.TEXT_NODE) {
+          rawText += child.textContent ?? ''
+          return
+        }
+        if (child.nodeType === Node.ELEMENT_NODE) {
+          const childElement = child as Element
+          const isBlock = blockTags.has(childElement.tagName)
+          if (isBlock && rawText && !rawText.endsWith('\n')) {
+            rawText += '\n'
+          }
+          visit(child)
+          if (isBlock && !rawText.endsWith('\n')) {
+            rawText += '\n'
+          }
+        }
+      })
+    }
+    visit(element)
+
+    return rawText
+      .replace(/\u00a0/g, ' ')
+      .split('\n')
+      .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  }
+
+  const authoredBody = findElement(bodySelectors)
+  const hasSeeMore = authoredBody
+    ? Array.from(
+        authoredBody.querySelectorAll<HTMLElement>(
+          'button, a, [role="button"]',
+        ),
+      ).some((control) => /\bsee\s+more\b/i.test(control.textContent?.trim() ?? ''))
+    : false
   if (hasSeeMore) {
     return { kind: 'collapsed-post' }
   }
 
   const textFrom = (selectors: string[]) => {
-    for (const selector of selectors) {
-      const element = Array.from(
-        candidate.querySelectorAll<HTMLElement>(selector),
-      ).find(belongsToCandidate)
-      if (element) {
-        const text = element.textContent
-          ?.replace(/\u00a0/g, ' ')
-          .split('\n')
-          .map((line) => line.replace(/[ \t]+/g, ' ').trim())
-          .filter(Boolean)
-          .join('\n')
-        if (text) return text
-      }
-    }
-    return undefined
+    const element = findElement(selectors)
+    if (!element) return undefined
+    const text =
+      normalizeText(element) || element.getAttribute('aria-label')?.trim()
+    return text || undefined
   }
 
   const authorDisplayName = textFrom([
     '[data-testid="actor-name"]',
     '[data-test-id="feed-shared-actor__name"]',
     '[aria-label^="By "]',
-  ])
+  ])?.replace(/^By\s+/i, '')
   if (!authorDisplayName) {
     return { kind: 'author-not-found' }
   }
 
-  const originalAuthoredText = textFrom([
-    '[data-testid="post-body"]',
-    '[data-testid="expandable-text-box"]',
-    '[data-test-id="feed-shared-update-v2__description"]',
-    '.feed-shared-update-v2__description',
-    '.feed-shared-inline-show-more-text',
-  ])
+  const originalAuthoredText = authoredBody
+    ? normalizeText(authoredBody) || undefined
+    : undefined
   if (!originalAuthoredText) {
     return { kind: 'no-text' }
   }
@@ -148,6 +204,39 @@ export function extractPostContextInPage(
 
 export const extractPostContextFromDocument = extractPostContextInPage
 
+const postFailureKinds = new Set<PostExtractionResult['kind']>([
+  'unsupported-surface',
+  'post-not-found',
+  'ambiguous-post',
+  'collapsed-post',
+  'no-text',
+  'author-not-found',
+  'unexpected-error',
+])
+
+function isPostExtractionResult(value: unknown): value is PostExtractionResult {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Record<string, unknown>
+  if (candidate.kind === 'success') {
+    if (!candidate.context || typeof candidate.context !== 'object') return false
+    const context = candidate.context as Record<string, unknown>
+    if (
+      typeof context.authorDisplayName !== 'string' ||
+      !context.authorDisplayName.trim() ||
+      typeof context.originalAuthoredText !== 'string' ||
+      !context.originalAuthoredText.trim()
+    ) {
+      return false
+    }
+    return ['authorHeadline', 'stablePostIdentifier', 'publicationTimeLabel'].every(
+      (key) =>
+        context[key] === undefined ||
+        (typeof context[key] === 'string' && context[key].trim().length > 0),
+    )
+  }
+  return typeof candidate.kind === 'string' && postFailureKinds.has(candidate.kind as PostExtractionResult['kind'])
+}
+
 export async function extractCurrentPostContext(): Promise<PostExtractionResult> {
   try {
     const [activeTab] = await chrome.tabs.query({
@@ -162,9 +251,11 @@ export async function extractCurrentPostContext(): Promise<PostExtractionResult>
       target: { tabId: activeTab.id },
       func: extractPostContextInPage,
     })
-    return injection?.result ?? { kind: 'unexpected-error' }
-  } catch (error) {
-    console.error('LinkedIn context extraction failed', error)
+    const runtimeResult: unknown = injection?.result
+    return isPostExtractionResult(runtimeResult)
+      ? runtimeResult
+      : { kind: 'unexpected-error' }
+  } catch {
     return { kind: 'unexpected-error' }
   }
 }

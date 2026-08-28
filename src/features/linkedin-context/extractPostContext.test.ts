@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  extractCurrentPostContext,
   extractPostContextFromDocument,
   type PostExtractionResult,
 } from './extractPostContext'
@@ -94,8 +95,10 @@ describe('extractPostContextFromDocument', () => {
       extract(`
         <article data-urn="urn:li:activity:123">
           <div data-testid="actor-name">Ada</div>
-          <div data-testid="post-body">Visible fragment</div>
-          <button>See more</button>
+          <div data-testid="post-body">
+            Visible fragment
+            <button>See more</button>
+          </div>
         </article>
       `),
     ).toEqual({ kind: 'collapsed-post' })
@@ -130,11 +133,102 @@ describe('extractPostContextFromDocument', () => {
     ).toEqual({ kind: 'unexpected-error' })
   })
 
+  it('only detects see more inside the Primary Post body', () => {
+    expect(
+      extract(`
+        <article data-urn="urn:li:activity:123">
+          <div data-testid="actor-name">Ada</div>
+          <div data-testid="post-body">Complete authored text.</div>
+          <article data-urn="urn:li:activity:999">
+            <button>See more</button>
+            <div data-testid="post-body">Shared text</div>
+          </article>
+        </article>
+      `),
+    ).toMatchObject({
+      kind: 'success',
+      context: { originalAuthoredText: 'Complete authored text.' },
+    })
+  })
+
+  it('preserves paragraph breaks from block elements', () => {
+    expect(
+      extract(`
+        <article data-urn="urn:li:activity:123">
+          <div data-testid="actor-name">Ada</div>
+          <div data-testid="post-body"><p>First paragraph.</p><p>Second paragraph.</p></div>
+        </article>
+      `),
+    ).toMatchObject({
+      kind: 'success',
+      context: { originalAuthoredText: 'First paragraph.\nSecond paragraph.' },
+    })
+  })
+
+  it('normalizes the By prefix from an ARIA author fallback', () => {
+    expect(
+      extract(`
+        <article data-urn="urn:li:activity:123">
+          <div aria-label="By Ada Lovelace"></div>
+          <div data-testid="post-body">A useful post.</div>
+        </article>
+      `),
+    ).toMatchObject({
+      kind: 'success',
+      context: { authorDisplayName: 'Ada Lovelace' },
+    })
+  })
+
   it('never includes the URL in context', () => {
     const result = extract(
       '<article data-urn="urn:li:activity:123"><div data-testid="actor-name">Ada</div><div data-testid="post-body">Text</div></article>',
     )
     expect(JSON.stringify(result)).not.toContain('linkedin.com')
+  })
+})
+describe('extractCurrentPostContext', () => {
+  const query = vi.fn()
+  const executeScript = vi.fn()
+
+  beforeEach(() => {
+    query.mockReset()
+    executeScript.mockReset()
+    vi.stubGlobal('chrome', {
+      tabs: { query },
+      scripting: { executeScript },
+    })
+    query.mockResolvedValue([{ id: 7 }])
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it.each([
+    undefined,
+    [],
+    [{}],
+    [{ result: null }],
+    [{ result: { kind: 'unknown' } }],
+    [{ result: { kind: 'success', context: {} } }],
+  ])('maps malformed runtime result %j to unexpected-error', async (runtimeResult) => {
+    executeScript.mockResolvedValue(
+      runtimeResult === undefined ? undefined : runtimeResult,
+    )
+
+    await expect(extractCurrentPostContext()).resolves.toEqual({
+      kind: 'unexpected-error',
+    })
+  })
+
+  it('does not log when runtime extraction rejects', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    executeScript.mockRejectedValue(new Error('runtime failure'))
+
+    await expect(extractCurrentPostContext()).resolves.toEqual({
+      kind: 'unexpected-error',
+    })
+    expect(consoleError).not.toHaveBeenCalled()
   })
 })
 

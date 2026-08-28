@@ -51,8 +51,16 @@ const contextMessages = {
   'unexpected-error': 'Unable to extract this post. Try again.',
 } satisfies Record<Exclude<PostExtractionResult['kind'], 'success'>, string>
 
-function loadPage(): Promise<DetectionResult> {
-  return detectCurrentPage()
+type RetryButtonProps = {
+  onClick: () => void
+}
+
+function RetryButton({ onClick }: RetryButtonProps) {
+  return (
+    <button className="retry-button" onClick={() => void onClick()}>
+      Retry
+    </button>
+  )
 }
 
 export function Popup() {
@@ -63,7 +71,7 @@ export function Popup() {
     await Promise.resolve()
     setResult(null)
     setContextResult(null)
-    const detection = await loadPage()
+    const detection = await detectCurrentPage()
     setResult(detection)
     if (detection.kind === 'linkedin') {
       setContextResult({ kind: 'context-loading' })
@@ -105,9 +113,7 @@ export function Popup() {
         <span className="status__message">{presentation.message}</span>
       </div>
       {presentation.canRetry ? (
-        <button className="retry-button" onClick={load}>
-          Retry
-        </button>
+        <RetryButton onClick={load} />
       ) : null}
       {context ? (
         <section className="context-panel" aria-label="LinkedIn post context">
@@ -130,9 +136,7 @@ export function Popup() {
             <>
               <p className="context-panel__message">{contextMessages[context.kind]}</p>
               {canRetryContext ? (
-                <button className="retry-button" onClick={load}>
-                  Retry
-                </button>
+                <RetryButton onClick={load} />
               ) : null}
             </>
           )}
