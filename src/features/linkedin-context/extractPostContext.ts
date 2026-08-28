@@ -1,3 +1,5 @@
+import { classifyLinkedInRoute } from './routes'
+
 export type ExtractedPostContext = {
   authorDisplayName: string
   originalAuthoredText: string
@@ -34,16 +36,10 @@ export function extractPostContextInPage(
   } catch {
     return { kind: 'unexpected-error' }
   }
-  const individualPostPath = /^\/posts\/[^/]+\/?$/
-  const activityPath = /^\/feed\/update\/urn:li:activity:[^/]+\/?$/
-  const isLinkedInHost =
-    url.protocol === 'https:' &&
-    (url.hostname === 'linkedin.com' || url.hostname === 'www.linkedin.com')
-  const isIndividualPostRoute =
-    individualPostPath.test(url.pathname) || activityPath.test(url.pathname)
-  const isFeedRoute = url.pathname === '/feed/'
+  const route = classifyLinkedInRoute(currentUrl)
+  const isFeedRoute = route === 'feed'
 
-  if (!isLinkedInHost || (!isIndividualPostRoute && !isFeedRoute)) {
+  if (route === 'unsupported') {
     return { kind: 'unsupported-surface' }
   }
 

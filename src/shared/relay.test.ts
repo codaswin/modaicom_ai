@@ -9,9 +9,9 @@ import {
 describe('session relay contract', () => {
   it('validates versioned extraction messages and rejects malformed payloads', () => {
     const result = { kind: 'no-text' as const }
-    expect(isRelayMessage({ version: 1, type: 'INLINE_EXTRACTION_RESULT', generation: 2, result })).toBe(true)
-    expect(isRelayMessage({ version: 2, type: 'INLINE_EXTRACTION_RESULT', generation: 2, result })).toBe(false)
-    expect(isRelayMessage({ version: 1, type: 'INLINE_EXTRACTION_RESULT', generation: 2, result: { kind: 'bad' } })).toBe(false)
+    expect(isRelayMessage({ version: 1, type: 'INLINE_EXTRACTION_RESULT', generation: 2, sessionId: 'session-a', result })).toBe(true)
+    expect(isRelayMessage({ version: 2, type: 'INLINE_EXTRACTION_RESULT', generation: 2, sessionId: 'session-a', result })).toBe(false)
+    expect(isRelayMessage({ version: 1, type: 'INLINE_EXTRACTION_RESULT', generation: 2, sessionId: 'session-a', result: { kind: 'bad' } })).toBe(false)
     expect(isRelayMessage({ version: 1, type: 'UNKNOWN' })).toBe(false)
   })
 

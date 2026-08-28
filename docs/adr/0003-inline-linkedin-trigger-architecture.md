@@ -9,6 +9,6 @@ The inline `modaicom` trigger must exist beside eligible LinkedIn comment compos
 
 The content script uses a versioned conservative composer-adapter allowlist; unknown LinkedIn markup fails closed. Bootstrap discovery may retry only within a bounded five-attempt/one-second window and observes validated narrow containers, never the document body.
 
-Relay and generation operations are serialized per tab. A separate `modaicom.generation.<tabId>` session record stores only schema version, generation, creation, and expiry metadata. It shares the five-minute expiry policy with relay records, retains barriers through route cleanup, and is removed immediately on tab close. This prevents late results from older content-script sessions or service-worker races from overwriting newer clicks.
+Relay and generation operations are serialized per tab. A separate `modaicom.generation.<tabId>` session record stores only schema version, session identity, generation, monotonic counter, creation, and expiry metadata. It shares the five-minute expiry policy with relay records, retains barriers through route cleanup, and is removed immediately on tab close. This prevents late results from older content-script sessions or service-worker races from overwriting newer clicks.
 
 The phase is not complete until a dated manual Chrome smoke test passes on both supported surfaces.

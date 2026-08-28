@@ -13,6 +13,7 @@ The popup never scans feed candidates or starts targeting. It remains an on-dema
 ## Supported surfaces and permissions
 
 - The content script matches only `https://linkedin.com/*` and `https://www.linkedin.com/*`.
+- The recognized feed-container allowlist is versioned and currently contains only `main [role="feed"]` and `main .scaffold-finite-scroll__content`. Unknown containers fail closed.
 - It internally enables reconciliation only on `/feed/` and recognized individual-post route families such as `/posts/...` and `/feed/update/urn:li:activity:...`.
 - Profile, search, company, group, messaging, and all other LinkedIn surfaces receive no Inline Trigger.
 - The manifest adds exact LinkedIn `host_permissions`, a static `document_idle` content script, a service worker, and the `storage` permission required for `chrome.storage.session`.
@@ -35,14 +36,18 @@ The popup never scans feed candidates or starts targeting. It remains an on-dema
 - Eligible Comment Composers are only recognized LinkedIn comment composer roots (textarea or contenteditable variants) with a validated association to exactly one Owning Post.
 - The adapter must reject replies, messages, search fields, post composers, nested/shared posts, and unrelated editable UI.
 - If ownership is ambiguous or the post root is not a valid Top-Level Feed Post or Primary Post, no trigger is rendered and no authored/editor text is read.
-- Multiple editor representations for one Owning Post are deduplicated by reliable stable post identity, with a unique current-session DOM fallback only when necessary.
+- Feed post roots must be either `article[data-urn/data-id]` or `.feed-shared-update-v2[data-urn/data-id]`, with a recognized original-body marker. Activity-bearing cards with unknown root shapes fail closed.
+- Every activity candidate nested beneath another validated candidate is rejected; ambiguous outer/inner relationships reject the whole group.
+- Multiple editor representations for one Owning Post are deduplicated by reliable stable post identity, with a unique current-session DOM fallback only when necessary. The first connected eligible editor in document order owns the single trigger.
+- Duplicate stable post identities are ambiguous and receive no trigger.
 - Feed targeting selects only Top-Level Feed Posts. Individual-post targeting selects the page’s Primary Post.
 
 ## SPA and observer behavior
 
 - The content script runs at `document_idle`.
 - One debounced MutationObserver per document observes only structural changes beneath validated feed/editor containers. It never reads post text, comment text, or editor values.
-- Reconciliation is idempotent: newly eligible editors receive a trigger, duplicate triggers are removed, and orphaned triggers/tokens are removed when owners disappear or become invalid.
+- Reconciliation is idempotent: newly eligible editors receive a trigger, duplicate triggers are removed, and orphaned triggers/tokens are removed when owners disappear or become invalid. A replaced DOM node is treated as a new Owning Post element: remove the orphan first, then create one fresh trigger.
+- Loaded eligible posts receive triggers regardless of viewport visibility or position.
 - `popstate` and carefully wrapped `history.pushState`/`replaceState` detect SPA route changes while preserving original History API behavior exactly.
 - A route change removes old Inline Triggers and target markers, clears that tab’s relay through the service worker, and reconciles only the new supported route. Unsupported routes contain no modaicom controls.
 - Observer and route hooks disconnect during content-script/document teardown.
@@ -69,12 +74,12 @@ While extraction runs, only the Inline Trigger’s subtle busy/disabled state ch
 
 ## Adapter and lifecycle contracts
 
-- Composer recognition uses a versioned, conservative allowlist maintained by a dedicated adapter. Every new or changed variant requires an adapter-version change, deterministic fixture coverage, and documentation; unknown markup receives no trigger.
+- Composer recognition uses a version 2, conservative allowlist maintained by a dedicated adapter. Every new or changed variant requires an adapter-version change, deterministic fixture coverage, and documentation; unknown markup receives no trigger.
 - Feed bootstrap may retry discovery of `<main>` at a fixed small interval for at most five attempts or one second total, whichever comes first. Pending retries are cancelled on route change and teardown. No document-wide observation or continuous polling is allowed.
-- Generation metadata is stored separately from relay results under a fixed per-tab namespace such as `modaicom.generation.<tabId>`. It contains only schema version, latest accepted generation, created timestamp, and expiry timestamp, with the same five-minute expiry policy.
+- Generation metadata is stored separately from relay results under a fixed per-tab namespace such as `modaicom.generation.<tabId>`. It contains only schema version, session identity, latest accepted generation, monotonic counter, created timestamp, and expiry timestamp, with the same five-minute expiry policy.
 - Relay reads, writes, generation barriers, expiry cleanup, route cleanup, and tab-close cleanup all execute through one per-tab serialized service-worker queue. A generation is revalidated immediately before writing.
 - On route changes, teardown, or reinitialization, pending retries, observers, wrappers, tokens, and history hooks are cleaned up. Reinitialization is idempotent and cannot stack observers or wrapped History APIs.
-- The manual Chrome smoke test is a required completion gate. Until a dated pass is recorded for both the home feed and an individual-post page, this phase remains implemented but pending validation.
+- The manual Chrome smoke test is a required completion gate. Until a dated pass is recorded for both the home feed and an individual-post page, this phase remains implemented but pending validation. A passing record changes the status to Complete.
 
 ## Testing and verification
 
@@ -85,6 +90,8 @@ Deterministic fixtures and unit tests must cover:
 - exclusion of replies, nested/shared posts, messages, search fields, post composers, and unrelated editable UI;
 - exact Owning Post association and ambiguous-owner rejection;
 - trigger accessibility, adjacency, deduplication, unique identity, busy state, and editor non-mutation;
+- observer-driven insertion of a newly appended feed post using the real debounced scheduler;
+- exact trigger-to-Owning-Post mapping and rejection of duplicate or nested activity identities;
 - MutationObserver reconciliation, orphan cleanup, route changes, History API preservation, and teardown;
 - exact-root extraction and every Phase 2 typed outcome;
 - versioned message validation and sender-derived tab identity;
