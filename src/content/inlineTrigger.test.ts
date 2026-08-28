@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { composerIsEligible, isSupportedRoute, observationScopes, postCandidates, reconcile } from './inlineTrigger'
+import { composerIsEligible, isSupportedRoute, markRuntimeInvalidated, observationScopes, postCandidates, reconcile, teardownInlineTriggerContentScript, initializeInlineTriggerContentScript } from './inlineTrigger'
 
 describe('inline trigger content boundary', () => {
   it('supports only the feed and recognized individual-post routes', () => {
@@ -121,6 +121,23 @@ describe('inline trigger content boundary', () => {
     document.body.append(main)
     expect(postCandidates(document, 'https://www.linkedin.com/feed/')).toEqual([])
     main.remove()
+  })
+
+
+  it('stops reconciliation after extension runtime invalidation', () => {
+    const root = document.createElement('div')
+    root.setAttribute('data-testid', 'comment-composer')
+    const editor = document.createElement('div')
+    editor.setAttribute('contenteditable', 'true')
+    editor.setAttribute('aria-label', 'Add a comment')
+    root.append(editor)
+    document.body.append(root)
+    markRuntimeInvalidated()
+    reconcile('https://www.linkedin.com/feed/')
+    expect(document.querySelectorAll('[data-modaicom-inline-wrapper]').length).toBe(0)
+    root.remove()
+    teardownInlineTriggerContentScript()
+    initializeInlineTriggerContentScript()
   })
 
   it('excludes unrelated activity cards and observes only the feed container', () => {
