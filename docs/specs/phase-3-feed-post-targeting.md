@@ -1,112 +1,101 @@
-# Phase 3 — LinkedIn Feed-Post Targeting
+# Phase 3 — LinkedIn Feed-Post Targeting via Inline Trigger
 
-Status: Confirmed on 2026-08-28.
+Status: Revised and confirmed on 2026-08-28.
 
-This specification is the shared understanding reached through the `grill-with-docs` session. It is intentionally limited to selecting one top-level post from LinkedIn’s home feed and extracting that selected post using the existing Phase 2 context boundary.
+This specification defines the smallest inline-trigger slice for identifying one LinkedIn post from a genuine comment composer and extracting that post through the existing Phase 2 boundary. It supports only the home feed and recognized individual-post pages.
 
 ## Outcome
 
-When the user is on exactly `https://linkedin.com/feed/` or `https://www.linkedin.com/feed/` (query strings and fragments allowed), modaicom lets them explicitly select one currently loaded Top-Level Feed Post. The selected post is then treated as the Primary Post and displayed using the existing Extracted Post Context preview.
+When modaicom runs on an exact supported LinkedIn host, a static content script may render a branded `modaicom` Inline Trigger beside an Eligible Comment Composer. The user’s explicit click on that trigger targets the composer’s Owning Post and starts read-only extraction. The selected result is handed to the popup for display through a short-lived service-worker relay.
 
-The user remains in control: modaicom never infers intent from visibility, focus, position, or post count, and never publishes anything.
+The popup never scans feed candidates or starts targeting. It remains an on-demand fallback for individual-post extraction when no relay exists.
+
+## Supported surfaces and permissions
+
+- The content script matches only `https://linkedin.com/*` and `https://www.linkedin.com/*`.
+- It internally enables reconciliation only on `/feed/` and recognized individual-post route families such as `/posts/...` and `/feed/update/urn:li:activity:...`.
+- Profile, search, company, group, messaging, and all other LinkedIn surfaces receive no Inline Trigger.
+- The manifest adds exact LinkedIn `host_permissions`, a static `document_idle` content script, a service worker, and the `storage` permission required for `chrome.storage.session`.
+- Existing `activeTab` and `scripting` permissions remain only because the popup’s individual-post fallback still uses them. No broader permission is added.
 
 ## User workflow
 
-1. The popup opens on the supported `/feed/` route and shows `Select a LinkedIn post to continue.` with a `Start selection` action.
-2. The user activates Start selection.
-3. modaicom scans the currently loaded DOM once using the dedicated feed-targeting adapter.
-4. If discovery is reliable, modaicom starts a Feed Selection Session, adds an accessible `Use this post` button to each eligible candidate, and shows a temporary Selection Banner with `Cancel selection`.
-5. The user chooses exactly one post. All other per-post controls are removed immediately.
-6. The selected candidate receives an Ephemeral Selection Token. The user closes or reopens the popup as needed.
-7. On reopening, modaicom verifies the token and target identity, extracts the Selected Feed Post, and displays the existing read-only Extracted Post Context preview.
-8. On cancellation or any terminal failure, temporary UI is removed and the popup returns to the start-selection state with actionable copy.
+1. The content script performs one structural reconciliation after `document_idle` and starts one narrow, debounced MutationObserver.
+2. On a supported surface, it identifies genuine Eligible Comment Composers and their Owning Posts.
+3. It renders one accessible, keyboard-operable branded `modaicom` Inline Trigger per distinct Owning Post. The trigger is adjacent to the editor and does not wrap or alter it.
+4. The user explicitly clicks the Inline Trigger. The trigger becomes subtly busy/disabled and ignores duplicate clicks.
+5. The content script marks the exact Owning Post ephemerally and invokes the Phase 2 extractor against that exact element and current route.
+6. Only the typed plain extraction result is sent to the service worker as a versioned runtime message. DOM nodes, HTML, URLs, editor values, and raw exceptions never leave the content script.
+7. The service worker stores the latest valid Session Relay Result for that tab in `chrome.storage.session`.
+8. When the popup opens, it requests the relay through the service worker. The worker validates expiry, returns the typed result, and clears it before completing the read. The popup shows the read-only context or fixed failure copy.
+9. If no valid relay exists, `/feed/` shows `Select a LinkedIn post to continue.` with no targeting action in the popup; an individual-post page preserves the existing on-demand Phase 2 fallback.
 
-## Surface and candidate boundary
+## Editor and Owning Post boundary
 
-- Targeting is enabled only for HTTPS exact hosts `linkedin.com` and `www.linkedin.com` with pathname `/feed/`. `/feed` without the trailing slash and every other path are unsupported.
-- Query strings and fragments do not affect route eligibility.
-- Feed Candidate Discovery uses a dedicated adapter with conservative LinkedIn post-root selectors.
-- Only Top-Level Feed Posts directly belonging to the home-feed collection are eligible.
-- Nested shared posts, comments, replies, embedded content, and unrelated cards are excluded explicitly.
-- The adapter returns `no-candidates` when no eligible candidate is found and `ambiguous-candidates` when it cannot establish a reliable distinct candidate set.
-- The selection session captures a Selection Snapshot of the currently loaded candidates. Newly loaded or rerendered posts require cancellation and a new session; no MutationObserver or continuous retargeting is used.
+- Eligible Comment Composers are only recognized LinkedIn comment composer roots (textarea or contenteditable variants) with a validated association to exactly one Owning Post.
+- The adapter must reject replies, messages, search fields, post composers, nested/shared posts, and unrelated editable UI.
+- If ownership is ambiguous or the post root is not a valid Top-Level Feed Post or Primary Post, no trigger is rendered and no authored/editor text is read.
+- Multiple editor representations for one Owning Post are deduplicated by reliable stable post identity, with a unique current-session DOM fallback only when necessary.
+- Feed targeting selects only Top-Level Feed Posts. Individual-post targeting selects the page’s Primary Post.
 
-## Selection controls and lifecycle
+## SPA and observer behavior
 
-- Each eligible candidate receives a temporary, keyboard-operable button labelled exactly `Use this post`.
-- Each button is explicitly associated with its candidate post for accessible context.
-- A temporary Selection Banner states `Select a LinkedIn post to continue.` and provides `Cancel selection`.
-- Selecting one candidate immediately removes all other per-post controls.
-- Controls, banner, and token exist only during the explicit Feed Selection Session.
-- Cleanup runs best-effort on success, cancellation, no-candidates, ambiguous-candidates, selection-failure, stale-target, required-data failure, unexpected error, and observable popup/tab closure.
-- Cancellation is a normal user outcome. It returns `cancelled` and the popup shows `Select a LinkedIn post to continue.` with `Start selection`.
+- The content script runs at `document_idle`.
+- One debounced MutationObserver per document observes only structural changes beneath validated feed/editor containers. It never reads post text, comment text, or editor values.
+- Reconciliation is idempotent: newly eligible editors receive a trigger, duplicate triggers are removed, and orphaned triggers/tokens are removed when owners disappear or become invalid.
+- `popstate` and carefully wrapped `history.pushState`/`replaceState` detect SPA route changes while preserving original History API behavior exactly.
+- A route change removes old Inline Triggers and target markers, clears that tab’s relay through the service worker, and reconciles only the new supported route. Unsupported routes contain no modaicom controls.
+- Observer and route hooks disconnect during content-script/document teardown.
 
-## Target verification and extraction
+## Extraction and privacy boundary
 
-- The selected DOM node is identified by an Ephemeral Selection Token, not by position or a fuzzy text/author match.
-- Before extraction, modaicom verifies that the token exists, the node is attached, the node remains a valid Top-Level Feed Post, and any available stable identifier has not changed.
-- A missing token, detached node, invalid candidate status, or changed stable identifier returns `stale-target`.
-- Stale targets fail closed; modaicom never substitutes another post.
-- On successful verification, the selected feed post is passed through the existing Phase 2 extraction boundary and treated as the Primary Post.
-- Required fields and failures are unchanged: missing Original Authored Text returns `no-text`; missing author display name returns `author-not-found`; neither returns partial context.
-- Successful output is the existing Extracted Post Context contract: required author display name and post text, plus optional author headline, stable post identifier, and visible publication/time label when reliable.
-- URLs are excluded from the context.
+- The Phase 2 adapter gains an exact-root entry point accepting the validated Owning Post Element and current supported route. It reuses existing field extraction, normalization, required-field failures, collapsed-text handling, and URL exclusion.
+- Extraction begins only after the explicit Inline Trigger click. Pre-click observation is structural only.
+- The editor is never focused, blurred, read, mutated, wrapped, replaced, or used as extraction input.
+- The content script sends only a typed plain result to the service worker. Runtime messages use strict versioned discriminated envelopes such as `{ version: 1, type: 'INLINE_EXTRACTION_RESULT', result }`; malformed or unknown messages are ignored without logging.
+- Content-script message tab identity is always derived from `sender.tab.id`, never trusted from a payload field.
+- The service worker owns all `chrome.storage.session` access. It uses a namespaced key containing the tab ID, typed result, schema version, created timestamp, expiry timestamp, and a per-tab generation/timestamp. It rejects expired or malformed records.
+- Relay expiry is fixed at five minutes. Reads and writes check expiry; expired records are cleared opportunistically. `tabs.onRemoved` and route-clear messages remove records. Per-tab operations serialize read/validate/remove so concurrent popup reads cannot both consume a result. Older asynchronous click results cannot overwrite newer generations.
+- No URL, HTML, DOM, editor text, raw exception, authored content outside the selected context contract, logging, analytics, network transmission, or long-term persistence is allowed.
+- ADR-0003 records the deliberate partial supersession of ADR-0002 for exact-host access and static content scripts. ADR-0002’s privacy, read-only, and no-automatic-action guarantees remain in force.
 
-## Typed outcomes
+## Typed outcomes and UI
 
-Feed targeting adds these outcomes:
+The existing Phase 2 outcomes remain authoritative: `success`, `no-text`, `author-not-found`, `collapsed-post`, `post-not-found`, `ambiguous-post`, `unsupported-surface`, and `unexpected-error`.
 
-- `no-candidates`
-- `ambiguous-candidates`
-- `selection-failure`
-- `cancelled`
-- `stale-target`
+Feed/inline lifecycle outcomes include `cancelled`, `stale-target`, and `selection-failure` where applicable. The popup displays fixed, actionable copy and never exposes selectors, storage state, URLs, raw HTML, or exceptions.
 
-The existing Phase 2 outcomes remain authoritative for selected-post extraction: `success`, `no-text`, `author-not-found`, `collapsed-post`, `post-not-found`, `ambiguous-post`, `unsupported-surface`, and `unexpected-error`.
-
-The popup presents fixed, actionable copy for each outcome and never exposes selectors, raw HTML, URLs, or exception details.
-
-## Privacy and architecture boundary
-
-- Selection and extraction are on-demand and read-only.
-- Temporary `activeTab`/scripting access remains sufficient; no persistent LinkedIn host permission, static content script, background observer, or storage is introduced.
-- Selected context remains in popup memory only.
-- No URL or post content is persisted, logged, analyzed, transmitted, or sent to an external service.
-- ADR-0002 remains the governing on-demand LinkedIn extraction boundary; this slice does not change that privacy or permission decision.
-- ADR-0001 continues to prohibit automatic publication.
+While extraction runs, only the Inline Trigger’s subtle busy/disabled state changes. On failure it is restored for a fresh explicit click; no automatic retry occurs. Relay and target state are cleared after terminal outcomes.
 
 ## Testing and verification
 
-Deterministic sanitized DOM fixtures must cover:
+Deterministic fixtures and unit tests must cover:
 
-- strict `/feed/` route gating, including query/fragment acceptance and `/feed` rejection;
-- top-level candidate discovery and exclusion of nested/shared/comment/reply/embedded/unrelated content;
-- zero and ambiguous candidate outcomes;
-- accessible, associated `Use this post` controls;
-- selection snapshot behavior and immediate removal of other controls;
-- cancellation and cleanup on every terminal outcome;
-- selected-target extraction through the Phase 2 contract;
-- missing token, detached node, invalid candidate, changed identifier, and stale-target outcomes;
-- popup start-selection, loading, success preview, retry, cancellation, and typed failure states.
+- exact host and route gating;
+- feed and individual-post editor discovery;
+- exclusion of replies, nested/shared posts, messages, search fields, post composers, and unrelated editable UI;
+- exact Owning Post association and ambiguous-owner rejection;
+- trigger accessibility, adjacency, deduplication, unique identity, busy state, and editor non-mutation;
+- MutationObserver reconciliation, orphan cleanup, route changes, History API preservation, and teardown;
+- exact-root extraction and every Phase 2 typed outcome;
+- versioned message validation and sender-derived tab identity;
+- service-worker relay expiry, generation ordering, tab isolation, serialized read/clear, route clear, and tab close;
+- popup relay display, neutral no-relay states, and individual-page fallback;
+- absence of pre-click authored/editor text reads, logging, storage outside session, network calls, or automatic LinkedIn actions.
 
-Run the full required verification:
-
-- `npm run lint`
-- `npm run typecheck`
-- `npm test`
-- `npm run build`
+Run `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
 
 ## Completion criteria
 
-Phase 3 is complete when the supported `/feed/` route is gated exactly, the user can explicitly select one reliable Top-Level Feed Post, stale or ambiguous targets fail closed with typed outcomes, cleanup is guaranteed, the selected post is displayed through the Phase 2 Extracted Post Context preview, all deterministic tests and checks pass, and no out-of-scope capability is present.
+Phase 3 is complete when the exact-host content script renders only validated, deduplicated Inline Triggers on the feed and individual-post surfaces; an explicit click extracts exactly one Owning Post; SPA changes and teardown clean up safely; typed results relay through five-minute tab-isolated session storage; the popup displays read-only context/failures; all deterministic tests and checks pass; and no out-of-scope capability is present.
 
 ## Explicit non-goals
 
-- Individual comment/reply targeting or comment-thread extraction
-- LLM providers, prompt generation, tone, intent, or length controls
-- Suggestion generation, ranking, or selection
-- Editor insertion, draft replacement, automatic submission, or publishing
-- Automatic selection based on visibility, focus, position, or post count
-- Continuous content scripts, MutationObserver-based tracking, or background extraction
-- URL/content persistence, logging, analysis, telemetry, network transmission, or external services
-- Feed routes other than `/feed/`
+- Popup-driven feed scanning or legacy `Use this post`/Selection Banner behavior
+- Targeted comment or reply extraction, comment-thread context, or reply targeting
+- Reading or modifying comment/editor text
+- LLM providers, prompts, tone, intent, length, suggestions, ranking, or regeneration
+- Editor insertion, draft replacement, submission, or publishing
+- Automatic selection or automatic retry
+- URL/content persistence, logging, analytics, network transmission, or external services
+- Profile, search, company, group, messaging, or other unsupported LinkedIn surfaces

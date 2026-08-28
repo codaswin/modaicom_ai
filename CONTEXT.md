@@ -37,7 +37,7 @@ Text written by the Primary Post author, excluding the body of an embedded or sh
 _Avoid_: Quoted post, reshared content
 
 **Feed-Post Targeting**:
-The future capability through which a user identifies one specific post on a LinkedIn surface containing multiple posts. It is intentionally outside the smallest Phase 2 slice.
+The capability through which a user explicitly identifies one specific post on the LinkedIn home feed or an individual LinkedIn post page for read-only context extraction.
 _Avoid_: First-post extraction, automatic feed selection
 
 **Top-Level Feed Post**:
@@ -45,19 +45,39 @@ A post candidate that belongs directly to the home feed's post collection, exclu
 _Avoid_: Visible card, first feed item, nested post
 
 **Feed Selection Session**:
-The temporary, explicit interaction in which modaicom presents Selection Controls for currently loaded Top-Level Feed Posts and waits for the user to choose one.
+Legacy interaction in which modaicom presented per-post Selection Controls for currently loaded Top-Level Feed Posts. It is not part of the active Inline Trigger UX.
 _Avoid_: Passive feed scanning, automatic selection
 
 **Selection Control**:
-A temporary per-post “Use this post” action attached to one Top-Level Feed Post during a Feed Selection Session.
+A temporary per-post “Use this post” action attached to one Top-Level Feed Post during the legacy Feed Selection Session. It is distinct from the Inline Trigger.
 _Avoid_: Feed button, global select action
 
+**Inline Trigger**:
+A branded, accessible `modaicom` button placed beside an eligible comment composer and explicitly used by the user to target that composer’s owning Top-Level Feed Post or Primary Post for read-only extraction.
+_Avoid_: Selection Control, automatic trigger, editor insertion control
+
+**Inline Targeting Session**:
+The ephemeral interaction beginning when the user clicks an Inline Trigger and ending after the selected Owning Post's extraction result reaches its terminal handoff or is cleared.
+_Avoid_: Persistent selection, background targeting
+
+**Session Relay Result**:
+The latest typed extraction outcome temporarily handed from an Inline Targeting Session to the popup for read-only display.
+_Avoid_: Persistent context, global latest result
+
+**Eligible Comment Composer**:
+A genuine LinkedIn comment editor owned by a validated target post, excluding replies, messages, search fields, post composers, nested/shared posts, and unrelated editable UI.
+_Avoid_: Any textarea, reply editor, post composer
+
+**Owning Post**:
+The validated Top-Level Feed Post or Primary Post that directly contains an Eligible Comment Composer and is targeted when its Inline Trigger is clicked.
+_Avoid_: Nearest card, focused post, inferred ancestor
+
 **Ephemeral Selection Token**:
-A temporary marker attached to the selected Top-Level Feed Post's DOM node so modaicom can re-find and verify that exact target before extraction. It has no persistence beyond the active Feed Selection Session.
+A temporary marker attached to the exact Owning Post Element selected during an Inline Targeting Session so modaicom can verify that same target before extraction. It has no persistence beyond the active session.
 _Avoid_: Stored post reference, durable selector
 
 **Selection Banner**:
-A temporary page-level affordance shown during a Feed Selection Session that explains selection is active and provides a way to cancel it.
+Legacy temporary page-level affordance from the Feed Selection Session UX; it is not part of the active Inline Trigger flow.
 _Avoid_: Persistent LinkedIn UI, popup-only cancellation
 
 **Feed Candidate Discovery**:
@@ -77,7 +97,7 @@ The one Top-Level Feed Post explicitly chosen by the user during a Feed Selectio
 _Avoid_: Focused post, inferred target
 
 **Selection Snapshot**:
-The fixed set of eligible Top-Level Feed Posts discovered when a Feed Selection Session starts; posts loaded or changed afterward require cancellation and a new session.
+Legacy fixed candidate set from the Feed Selection Session UX; it is not used by the active Inline Trigger flow.
 _Avoid_: Live feed tracking, mutation-observer targeting
 
 **Feed Targeting Outcome**:
