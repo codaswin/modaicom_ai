@@ -1,6 +1,6 @@
 # Phase 3 — LinkedIn Feed-Post Targeting via Inline Trigger
 
-Status: Revised and confirmed on 2026-08-28.
+Status: Implemented, pending manual validation (decisions confirmed on 2026-08-28).
 
 This specification defines the smallest inline-trigger slice for identifying one LinkedIn post from a genuine comment composer and extracting that post through the existing Phase 2 boundary. It supports only the home feed and recognized individual-post pages.
 
@@ -66,6 +66,15 @@ The existing Phase 2 outcomes remain authoritative: `success`, `no-text`, `autho
 Feed/inline lifecycle outcomes include `cancelled`, `stale-target`, and `selection-failure` where applicable. The popup displays fixed, actionable copy and never exposes selectors, storage state, URLs, raw HTML, or exceptions.
 
 While extraction runs, only the Inline Trigger’s subtle busy/disabled state changes. On failure it is restored for a fresh explicit click; no automatic retry occurs. Relay and target state are cleared after terminal outcomes.
+
+## Adapter and lifecycle contracts
+
+- Composer recognition uses a versioned, conservative allowlist maintained by a dedicated adapter. Every new or changed variant requires an adapter-version change, deterministic fixture coverage, and documentation; unknown markup receives no trigger.
+- Feed bootstrap may retry discovery of `<main>` at a fixed small interval for at most five attempts or one second total, whichever comes first. Pending retries are cancelled on route change and teardown. No document-wide observation or continuous polling is allowed.
+- Generation metadata is stored separately from relay results under a fixed per-tab namespace such as `modaicom.generation.<tabId>`. It contains only schema version, latest accepted generation, created timestamp, and expiry timestamp, with the same five-minute expiry policy.
+- Relay reads, writes, generation barriers, expiry cleanup, route cleanup, and tab-close cleanup all execute through one per-tab serialized service-worker queue. A generation is revalidated immediately before writing.
+- On route changes, teardown, or reinitialization, pending retries, observers, wrappers, tokens, and history hooks are cleaned up. Reinitialization is idempotent and cannot stack observers or wrapped History APIs.
+- The manual Chrome smoke test is a required completion gate. Until a dated pass is recorded for both the home feed and an individual-post page, this phase remains implemented but pending validation.
 
 ## Testing and verification
 

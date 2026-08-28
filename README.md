@@ -46,6 +46,8 @@ Load the generated `dist` directory through Chrome's **Load unpacked** option.
 
 ## Manual smoke test
 
+The Phase 3 validation record is maintained in [docs/testing/phase-3-manual-smoke-test.md](docs/testing/phase-3-manual-smoke-test.md).
+
 1. Run `npm run check` and confirm it succeeds.
 2. Load the generated `dist` directory as an unpacked Chrome extension.
 3. Click the modaicom icon and confirm the React popup opens.

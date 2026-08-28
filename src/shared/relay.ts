@@ -3,6 +3,7 @@ import { isPostExtractionResult, type PostExtractionResult } from '../features/l
 export const RELAY_VERSION = 1 as const
 export const RELAY_TTL_MS = 5 * 60 * 1000
 export const RELAY_KEY_PREFIX = 'modaicom.relay.'
+export const GENERATION_KEY_PREFIX = 'modaicom.generation.'
 
 export type InlineExtractionResultMessage = {
   version: typeof RELAY_VERSION
@@ -14,6 +15,13 @@ export type ClearRelayMessage = { version: typeof RELAY_VERSION; type: 'CLEAR_RE
 export type GetLatestRelayMessage = { version: typeof RELAY_VERSION; type: 'GET_LATEST_RELAY' }
 export type RelayMessage = InlineExtractionResultMessage | ClearRelayMessage | GetLatestRelayMessage
 
+export type GenerationRecord = {
+  version: typeof RELAY_VERSION
+  generation: number
+  createdAt: number
+  expiresAt: number
+}
+
 export type SessionRelayRecord = {
   version: typeof RELAY_VERSION
   result: PostExtractionResult
@@ -24,6 +32,10 @@ export type SessionRelayRecord = {
 
 export function relayKey(tabId: number): string {
   return `${RELAY_KEY_PREFIX}${tabId}`
+}
+
+export function generationKey(tabId: number): string {
+  return `${GENERATION_KEY_PREFIX}${tabId}`
 }
 
 export function isRelayMessage(value: unknown): value is RelayMessage {
@@ -50,4 +62,10 @@ export function isSessionRelayRecord(value: unknown): value is SessionRelayRecor
     candidate.expiresAt > candidate.createdAt &&
     isPostExtractionResult(candidate.result)
   )
+}
+
+export function isGenerationRecord(value: unknown): value is GenerationRecord {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Record<string, unknown>
+  return candidate.version === RELAY_VERSION && typeof candidate.generation === 'number' && Number.isFinite(candidate.generation) && typeof candidate.createdAt === 'number' && Number.isFinite(candidate.createdAt) && typeof candidate.expiresAt === 'number' && Number.isFinite(candidate.expiresAt) && candidate.expiresAt > candidate.createdAt
 }
