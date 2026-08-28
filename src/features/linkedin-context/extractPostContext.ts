@@ -25,7 +25,7 @@ export type PostExtractionResult =
     }
 
 export function extractPostContextInPage(
-  root: Document = document,
+  root: Document | Element = document,
   currentUrl: string = location.href,
 ): PostExtractionResult {
   let url: URL
@@ -47,15 +47,19 @@ export function extractPostContextInPage(
     return { kind: 'unsupported-surface' }
   }
 
+  if (isFeedRoute && root.nodeType === Node.DOCUMENT_NODE) return { kind: 'unsupported-surface' }
+
   const candidateSelector = isFeedRoute
     ? 'article[data-urn^="urn:li:activity:"], article[data-id^="urn:li:activity:"]'
     : 'article[data-urn], article[data-id], [data-urn^="urn:li:activity:"], [data-id^="urn:li:activity:"]'
+  const isElementRoot = root.nodeType === Node.ELEMENT_NODE
+  const pageDocument = root.nodeType === Node.DOCUMENT_NODE ? (root as Document) : root.ownerDocument
   const candidateRoot = isFeedRoute
-    ? root.querySelector<HTMLElement>('main [role="feed"]')
+    ? (isElementRoot ? root : pageDocument?.querySelector<HTMLElement>('main [role="feed"]'))
     : root
-  const markedCandidates = Array.from(
-    candidateRoot?.querySelectorAll<HTMLElement>(candidateSelector) ?? [],
-  )
+  const markedCandidates = isElementRoot
+    ? [root as HTMLElement]
+    : Array.from(candidateRoot?.querySelectorAll<HTMLElement>(candidateSelector) ?? [])
   const candidates = markedCandidates.length
     ? markedCandidates.filter(
         (candidate) =>
@@ -65,63 +69,15 @@ export function extractPostContextInPage(
       ? []
       : Array.from(root.querySelectorAll<HTMLElement>('article'))
 
-  const cleanupFeedSelection = () => {
-    if (!isFeedRoute) return
-    root
-      .querySelectorAll('[data-modaicom-selection-control], [data-modaicom-selection-banner]')
-      .forEach((element) => element.remove())
-    root.querySelectorAll('[data-modaicom-selected-token]').forEach((element) => {
-      element.removeAttribute('data-modaicom-selected-token')
-      element.removeAttribute('data-modaicom-stable-id')
-      element.removeAttribute('data-modaicom-selection-invalid')
-    })
-  }
-
-  const selectedCandidate = isFeedRoute
-    ? Array.from(root.querySelectorAll<HTMLElement>('[data-modaicom-selected-token]'))
-    : []
-  if (isFeedRoute && root.documentElement.hasAttribute('data-modaicom-selection-cancelled')) {
-    root.documentElement.removeAttribute('data-modaicom-selection-cancelled')
-    cleanupFeedSelection()
-    return { kind: 'cancelled' }
-  }
-  if (isFeedRoute) {
-    const session = root.documentElement.getAttribute('data-modaicom-selection-session')
-    const snapshot = root.documentElement.getAttribute('data-modaicom-selection-snapshot')
-    if (!session) {
-      cleanupFeedSelection()
-      return { kind: 'unsupported-surface' }
-    }
-    const selected = selectedCandidate[0]
-    const currentSnapshot = candidates
-      .map((candidate) => candidate.getAttribute('data-urn') ?? candidate.getAttribute('data-id') ?? candidate.id)
-      .join('|')
-    const selectedStableId = selected?.getAttribute('data-modaicom-stable-id')
-    const currentStableId = selected?.getAttribute('data-urn') ?? selected?.getAttribute('data-id')
-    if (!session || !snapshot || selectedCandidate.length !== 1 || selected?.getAttribute('data-modaicom-selected-token') !== session || snapshot !== currentSnapshot) {
-      cleanupFeedSelection()
-      return { kind: 'stale-target' }
-    }
-    if (selectedStableId && currentStableId !== selectedStableId) {
-      cleanupFeedSelection()
-      return { kind: 'stale-target' }
-    }
-    if (!selected || !candidates.includes(selected)) {
-      cleanupFeedSelection()
-      return { kind: 'stale-target' }
-    }
-  }
-
   if (candidates.length === 0) {
     return { kind: 'post-not-found' }
   }
   if (!isFeedRoute && candidates.length !== 1) {
     return { kind: 'ambiguous-post' }
   }
-  const [candidate] = isFeedRoute ? selectedCandidate : candidates
+  const [candidate] = candidates
   if (!candidate) {
-    if (isFeedRoute) cleanupFeedSelection()
-    return { kind: isFeedRoute ? 'stale-target' : 'post-not-found' }
+    return { kind: 'post-not-found' }
   }
 
   const belongsToCandidate = (element: Element) =>
@@ -206,7 +162,6 @@ export function extractPostContextInPage(
       ).some((control) => /\bsee\s+more\b/i.test(control.textContent?.trim() ?? ''))
     : false
   if (hasSeeMore) {
-    cleanupFeedSelection()
     return { kind: 'collapsed-post' }
   }
 
@@ -224,7 +179,6 @@ export function extractPostContextInPage(
     '[aria-label^="By "]',
   ])?.replace(/^By\s+/i, '')
   if (!authorDisplayName) {
-    cleanupFeedSelection()
     return { kind: 'author-not-found' }
   }
 
@@ -232,7 +186,6 @@ export function extractPostContextInPage(
     ? normalizeText(authoredBody) || undefined
     : undefined
   if (!originalAuthoredText) {
-    cleanupFeedSelection()
     return { kind: 'no-text' }
   }
 
@@ -253,8 +206,6 @@ export function extractPostContextInPage(
       ? explicitIdentifier.trim()
       : url.pathname.match(/(urn:li:activity:[^/]+)/)?.[1]
 
-  cleanupFeedSelection()
-
   return {
     kind: 'success',
     context: {
@@ -265,6 +216,13 @@ export function extractPostContextInPage(
       ...(publicationTimeLabel ? { publicationTimeLabel } : {}),
     },
   }
+}
+
+export function extractPostContextFromElementInPage(
+  root: Element,
+  currentUrl: string = location.href,
+): PostExtractionResult {
+  return extractPostContextInPage(root, currentUrl)
 }
 
 export const extractPostContextFromDocument = extractPostContextInPage

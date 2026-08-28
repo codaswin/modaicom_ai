@@ -6,12 +6,14 @@ import { Popup } from './Popup'
 
 const query = vi.fn()
 const executeScript = vi.fn()
+const sendMessage = vi.fn()
 
 describe('Popup', () => {
   beforeEach(() => {
     query.mockReset()
     executeScript.mockReset()
-    vi.stubGlobal('chrome', { tabs: { query }, scripting: { executeScript } })
+    sendMessage.mockReset()
+    vi.stubGlobal('chrome', { tabs: { query }, scripting: { executeScript }, runtime: { sendMessage } })
   })
 
   afterEach(() => {
@@ -104,32 +106,27 @@ describe('Popup', () => {
     expect(executeScript).toHaveBeenCalledTimes(2)
   })
 
-  it('starts user-driven feed selection and shows the selection prompt', async () => {
-    const user = userEvent.setup()
+  it('shows a neutral feed state without popup-driven selection', async () => {
     query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/feed/' }])
-    executeScript
-      .mockResolvedValueOnce([{ result: { kind: 'unsupported-surface' } }])
-      .mockResolvedValueOnce([{ result: { kind: 'ready', count: 2 } }])
+    sendMessage.mockResolvedValue(null)
 
     render(<Popup />)
 
     await screen.findByText('Select a LinkedIn post to continue.')
-    await user.click(screen.getByRole('button', { name: 'Start selection' }))
-    expect(await screen.findByText('Choose a post on LinkedIn, then reopen modaicom.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Start selection' })).not.toBeInTheDocument()
   })
 
-  it('shows a typed selection failure with a restart action', async () => {
-    const user = userEvent.setup()
+  it('shows a relayed inline extraction result', async () => {
     query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/feed/' }])
-    executeScript.mockResolvedValue([{ result: { kind: 'unsupported-surface' } }])
+    sendMessage.mockResolvedValue({
+      kind: 'success',
+      context: { authorDisplayName: 'Ada Lovelace', originalAuthoredText: 'Relayed post.' },
+    })
 
     render(<Popup />)
 
-    await screen.findByText('Select a LinkedIn post to continue.')
-    executeScript.mockResolvedValueOnce([{ result: { kind: 'no-candidates' } }])
-    await user.click(screen.getByRole('button', { name: 'Start selection' }))
-    expect(await screen.findByText('No selectable LinkedIn posts were found. Try again.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Start selection' })).toBeInTheDocument()
+    expect(await screen.findByText('Relayed post.')).toBeInTheDocument()
+    expect(sendMessage).toHaveBeenCalledWith({ version: 1, type: 'GET_LATEST_RELAY' })
   })
 
 })

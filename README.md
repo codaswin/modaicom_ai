@@ -1,6 +1,6 @@
 # modaicom
 
-modaicom is an open-source Chrome extension for AI-assisted LinkedIn responses with the user in control. Phase 0 and Phase 1 provide the extension foundation and LinkedIn detection; Phase 2 extracts Primary Post context from supported individual LinkedIn post pages; Phase 3 targets one explicitly selected Top-Level Feed Post on the supported home feed. AI assistance is not implemented yet.
+modaicom is an open-source Chrome extension for AI-assisted LinkedIn responses with the user in control. Phase 0 and Phase 1 provide the extension foundation and LinkedIn detection; Phase 2 extracts Primary Post context from supported individual LinkedIn post pages; Phase 3 targets the Owning Post of an explicitly clicked inline `modaicom` trigger beside an eligible LinkedIn comment composer on the home feed or an individual post page. AI assistance is not implemented yet.
 
 ## Requirements
 
@@ -55,34 +55,33 @@ Load the generated `dist` directory through Chrome's **Load unpacked** option.
 7. Confirm HTTP LinkedIn URLs, unsupported subdomains such as `learning.linkedin.com`, and lookalike domains such as `linkedin.com.example.com` are not detected.
 8. Simulate or encounter an unavailable active-tab URL and confirm the popup shows its error state without crashing; select **Retry** and confirm detection runs again.
 9. Open a supported individual LinkedIn post page and confirm the popup shows the author and full authored post text.
-10. Confirm `/feed/` shows Start selection, temporary Use this post controls target only top-level feed posts, cancellation removes them, and the selected context previews successfully.
-11. Confirm feed, profile, search, company, and other unsupported LinkedIn paths show individual-post guidance.
-12. Confirm a collapsed post shows the exact guidance to expand “see more” manually, then select **Retry**.
-13. Confirm media-only, shared-only, ambiguous, missing-author, and missing-post-text cases fail clearly without mutating the LinkedIn page.
+10. On `/feed/` and a supported individual-post page, confirm an eligible comment composer receives one accessible inline `modaicom` trigger and unrelated editors receive none.
+11. Click the inline trigger and confirm the editor is not focused, read, or changed; reopen the popup and confirm the selected context or fixed failure copy appears.
+12. Confirm SPA route changes and editor rerenders remove orphaned triggers and unsupported routes contain no modaicom controls.
+13. Confirm a collapsed post shows the exact guidance to expand “see more” manually, then select **Retry** on an individual-post popup fallback.
+14. Confirm media-only, shared-only, ambiguous, missing-author, and missing-post-text cases fail clearly without mutating LinkedIn.
 
 ## Architecture
 
 The current dependency direction is deliberately small:
 
 ```text
-React popup
-    ↓
-LinkedIn detection + context extraction modules
-    ↓
-Chrome active-tab access, URL classification, and on-demand scripting
+LinkedIn content script ──► service worker relay ──► React popup
+          │                         │
+          └── exact-root context extraction
 ```
 
-The popup owns presentation and transient loading state. The detection module hides Chrome tab access and URL classification. The LinkedIn context adapter hides route recognition, DOM candidate selection, normalization, and typed extraction outcomes behind a separate interface.
+The content script performs structural editor/post reconciliation and handles explicit inline clicks. The service worker validates versioned messages and owns the five-minute tab-keyed `chrome.storage.session` relay. The popup owns presentation and retains the existing individual-post on-demand fallback.
 
-Future phases may introduce targeted comment/reply extraction, a prompt engine, LLM adapters, and storage. Those capabilities remain documented rather than implemented before their requirements exist.
+Future phases may introduce targeted comment/reply extraction, a prompt engine, LLM adapters, and storage beyond the bounded session relay. Those capabilities remain documented rather than implemented before their requirements exist.
 
 ## Privacy and control
 
-Phases 2 and 3 request Chrome's scripting capability alongside temporary activeTab access so they can inspect an individual post or the selected home-feed post only after the user opens the popup and explicitly starts selection. It makes no network requests, stores or transmits no URL or post content, and uses no telemetry. Extraction is read-only: modaicom never clicks “see more,” publishes a comment or reply, or automatically selects a post. Phase 3 adds only temporary page controls and a selection banner, removed after each terminal outcome.
+Phase 3 uses exact LinkedIn host permissions and a static `document_idle` content script so an inline `modaicom` trigger can appear beside eligible comment composers while the popup is closed. Before an explicit click, the content script inspects only structural information needed to identify composers and owning posts; it does not read authored post/comment text or editor values. After a click, only the selected post’s typed plain context or failure is relayed through the service worker’s five-minute `chrome.storage.session` handoff. No URLs, HTML, editor text, raw exceptions, analytics, logging, network transmission, or long-term persistence are used. Extraction remains read-only: modaicom never clicks “see more,” inserts text, or publishes a comment or reply.
 
 ## Status
 
-Implemented scope includes Phase 0 Foundation, Phase 1 LinkedIn Detection, Phase 2 Primary Post context extraction, and Phase 3 Feed-Post Targeting. Comment/reply extraction, AI generation, editor insertion, and publishing automation remain outside this scope.
+Implemented scope includes Phase 0 Foundation, Phase 1 LinkedIn Detection, Phase 2 Primary Post context extraction, and the revised Phase 3 inline Feed-Post Targeting design. The inline-trigger architecture is documented in ADR-0003; the revised inline-trigger slice is implemented. Comment/reply extraction, AI generation, editor insertion, and publishing automation remain outside this scope.
 
 ## License
 

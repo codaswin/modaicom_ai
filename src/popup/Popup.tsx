@@ -4,19 +4,13 @@ import {
   detectCurrentPage,
   type DetectionResult,
 } from '../features/linkedin-detection/detectCurrentPage'
-import {
-  extractCurrentPostContext,
-  type PostExtractionResult,
-} from '../features/linkedin-context/extractPostContext'
-import {
-  extractSelectedFeedPost,
-  isSupportedFeedUrl,
-  startFeedSelection,
-} from '../features/linkedin-context/feedTargeting'
+import { extractCurrentPostContext, isPostExtractionResult, type PostExtractionResult } from '../features/linkedin-context/extractPostContext'
+import { isSupportedFeedUrl } from '../features/linkedin-context/routes'
+import { RELAY_VERSION } from '../shared/relay'
 import './popup.css'
 
 type PopupState = DetectionResult['kind'] | 'loading'
-type ContextState = PostExtractionResult | { kind: 'context-loading' | 'selection-active' }
+type ContextState = PostExtractionResult | { kind: 'context-loading' }
 
 type ActionButtonProps = { label: string; onClick: () => void }
 function ActionButton({ label, onClick }: ActionButtonProps) {
@@ -39,7 +33,7 @@ const contextMessages = {
   'author-not-found': 'The post author could not be found. Try again.',
   'unexpected-error': 'Unable to extract this post. Try again.',
   cancelled: 'Select a LinkedIn post to continue.',
-  'stale-target': 'That LinkedIn post changed or was removed. Start selection again.',
+  'stale-target': 'That LinkedIn post changed or was removed. Try the modaicom trigger again.',
   'no-candidates': 'No selectable LinkedIn posts were found. Try again.',
   'ambiguous-candidates': 'LinkedIn posts could not be identified reliably. Try again.',
   'selection-failure': 'Unable to start selection on this page. Try again.',
@@ -54,16 +48,6 @@ const retryableContextKinds = new Set<PostExtractionResult['kind']>([
   'unexpected-error',
   'stale-target',
 ])
-const selectionRestartKinds = new Set<PostExtractionResult['kind']>([
-  'unsupported-surface',
-  'cancelled',
-  'stale-target',
-  'unexpected-error',
-  'no-candidates',
-  'ambiguous-candidates',
-  'selection-failure',
-])
-
 export function Popup() {
   const [result, setResult] = useState<DetectionResult | null>(null)
   const [contextResult, setContextResult] = useState<ContextState | null>(null)
@@ -78,6 +62,15 @@ export function Popup() {
     }
   }
 
+  const readRelay = async (): Promise<PostExtractionResult | null> => {
+    try {
+      const result: unknown = await chrome.runtime.sendMessage({ version: RELAY_VERSION, type: 'GET_LATEST_RELAY' })
+      return isPostExtractionResult(result) ? result : null
+    } catch {
+      return null
+    }
+  }
+
   const load = useCallback(async () => {
     setResult(null)
     setContextResult(null)
@@ -89,22 +82,23 @@ export function Popup() {
     const feed = Boolean(activeUrl && isSupportedFeedUrl(activeUrl))
     setIsFeed(feed)
     setContextResult({ kind: 'context-loading' })
-    setContextResult(feed ? await extractSelectedFeedPost() : await extractCurrentPostContext())
+    const relay = await readRelay()
+    if (relay) {
+      setContextResult(relay)
+    } else if (feed) {
+      setContextResult({ kind: 'unsupported-surface' })
+    } else {
+      setContextResult(await extractCurrentPostContext())
+    }
   }, [])
-
-  const beginSelection = async () => {
-    setContextResult({ kind: 'context-loading' })
-    const selection = await startFeedSelection()
-    setContextResult(selection.kind === 'ready' ? { kind: 'selection-active' } : { kind: selection.kind })
-  }
 
   useEffect(() => { void Promise.resolve().then(load) }, [load])
 
   const state: PopupState = result?.kind ?? 'loading'
   const presentation = statePresentation[state]
   const context = state === 'linkedin' ? contextResult : null
-  const canRetryContext = Boolean(context && retryableContextKinds.has(context.kind as PostExtractionResult['kind']))
-  const showStartSelection = Boolean(isFeed && context && selectionRestartKinds.has(context.kind as PostExtractionResult['kind']))
+  const showNeutralFeed = Boolean(isFeed && context?.kind === 'unsupported-surface')
+  const canRetryContext = Boolean(context && !showNeutralFeed && retryableContextKinds.has(context.kind as PostExtractionResult['kind']))
 
   return (
     <main className="popup">
@@ -113,9 +107,8 @@ export function Popup() {
       {presentation.canRetry ? <ActionButton label="Retry" onClick={load} /> : null}
       {context ? <section className="context-panel" aria-label="LinkedIn post context">
         {context.kind === 'context-loading' ? <p className="context-panel__message">Reading LinkedIn post…</p> :
-          context.kind === 'selection-active' ? <p className="context-panel__message">Choose a post on LinkedIn, then reopen modaicom.</p> :
           context.kind === 'success' ? <><p className="context-panel__author">{context.context.authorDisplayName}</p><p className="context-panel__text">{context.context.originalAuthoredText}</p>{context.context.authorHeadline ? <p className="context-panel__metadata">{context.context.authorHeadline}</p> : null}{context.context.publicationTimeLabel ? <p className="context-panel__metadata">{context.context.publicationTimeLabel}</p> : null}</> :
-          <><p className="context-panel__message">{showStartSelection && context.kind === 'unsupported-surface' ? 'Select a LinkedIn post to continue.' : contextMessages[context.kind]}</p>{showStartSelection ? <ActionButton label="Start selection" onClick={beginSelection} /> : canRetryContext ? <ActionButton label="Retry" onClick={load} /> : null}</>}
+          <><p className="context-panel__message">{showNeutralFeed ? 'Select a LinkedIn post to continue.' : contextMessages[context.kind]}</p>{canRetryContext ? <ActionButton label="Retry" onClick={load} /> : null}</>}
       </section> : null}
     </main>
   )
