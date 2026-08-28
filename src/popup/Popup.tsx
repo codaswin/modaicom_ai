@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import {
   detectCurrentPage,
@@ -78,7 +78,7 @@ export function Popup() {
     }
   }
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setResult(null)
     setContextResult(null)
     setIsFeed(false)
@@ -90,7 +90,7 @@ export function Popup() {
     setIsFeed(feed)
     setContextResult({ kind: 'context-loading' })
     setContextResult(feed ? await extractSelectedFeedPost() : await extractCurrentPostContext())
-  }
+  }, [])
 
   const beginSelection = async () => {
     setContextResult({ kind: 'context-loading' })
@@ -98,7 +98,7 @@ export function Popup() {
     setContextResult(selection.kind === 'ready' ? { kind: 'selection-active' } : { kind: selection.kind })
   }
 
-  useEffect(() => { void Promise.resolve().then(load) }, [])
+  useEffect(() => { void Promise.resolve().then(load) }, [load])
 
   const state: PopupState = result?.kind ?? 'loading'
   const presentation = statePresentation[state]
