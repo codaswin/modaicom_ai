@@ -40,6 +40,54 @@ _Avoid_: Quoted post, reshared content
 The future capability through which a user identifies one specific post on a LinkedIn surface containing multiple posts. It is intentionally outside the smallest Phase 2 slice.
 _Avoid_: First-post extraction, automatic feed selection
 
+**Top-Level Feed Post**:
+A post candidate that belongs directly to the home feed's post collection, excluding nested shared posts, comments, replies, embedded content, and unrelated cards.
+_Avoid_: Visible card, first feed item, nested post
+
+**Feed Selection Session**:
+The temporary, explicit interaction in which modaicom presents Selection Controls for currently loaded Top-Level Feed Posts and waits for the user to choose one.
+_Avoid_: Passive feed scanning, automatic selection
+
+**Selection Control**:
+A temporary per-post “Use this post” action attached to one Top-Level Feed Post during a Feed Selection Session.
+_Avoid_: Feed button, global select action
+
+**Ephemeral Selection Token**:
+A temporary marker attached to the selected Top-Level Feed Post's DOM node so modaicom can re-find and verify that exact target before extraction. It has no persistence beyond the active Feed Selection Session.
+_Avoid_: Stored post reference, durable selector
+
+**Selection Banner**:
+A temporary page-level affordance shown during a Feed Selection Session that explains selection is active and provides a way to cancel it.
+_Avoid_: Persistent LinkedIn UI, popup-only cancellation
+
+**Feed Candidate Discovery**:
+The conservative, adapter-owned process of finding exactly the currently loaded Top-Level Feed Posts on the supported `/feed/` surface while excluding nested or unrelated content.
+_Avoid_: Article scraping, broad card matching
+
+**Ambiguous Candidates**:
+A typed selection outcome when Feed Candidate Discovery cannot establish a reliable set of distinct Top-Level Feed Posts.
+_Avoid_: Best-guess candidate, first-match selection
+
+**Selection Failure**:
+A typed outcome when Feed Candidate Discovery or page injection cannot start or complete a Feed Selection Session.
+_Avoid_: Extraction failure, silent fallback
+
+**Selected Feed Post**:
+The one Top-Level Feed Post explicitly chosen by the user during a Feed Selection Session and subsequently treated as the Primary Post for context extraction.
+_Avoid_: Focused post, inferred target
+
+**Selection Snapshot**:
+The fixed set of eligible Top-Level Feed Posts discovered when a Feed Selection Session starts; posts loaded or changed afterward require cancellation and a new session.
+_Avoid_: Live feed tracking, mutation-observer targeting
+
+**Feed Targeting Outcome**:
+A typed result from the feed-targeting flow, covering successful selection, cancellation, candidate-discovery or injection failure, ambiguity, and stale-target detection.
+_Avoid_: Nullable target, generic failure string
+
+**Stale Target**:
+The typed outcome when the Top-Level Feed Post selected by the user is removed or no longer matches its original DOM target before extraction completes.
+_Avoid_: Substitute post, nearest-post fallback
+
 **Targeted Comment/Reply Extraction**:
 The future capability to extract one user-identified LinkedIn comment or reply with its relevant surrounding context. It is intentionally outside the smallest Phase 2 slice.
 _Avoid_: All-comments extraction, arbitrary comment selection

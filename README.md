@@ -1,6 +1,6 @@
 # modaicom
 
-modaicom is an open-source Chrome extension for AI-assisted LinkedIn responses with the user in control. Phase 0 and Phase 1 provide the extension foundation and LinkedIn detection; Phase 2 extracts the Primary Post context from supported individual LinkedIn post pages. AI assistance is not implemented yet.
+modaicom is an open-source Chrome extension for AI-assisted LinkedIn responses with the user in control. Phase 0 and Phase 1 provide the extension foundation and LinkedIn detection; Phase 2 extracts Primary Post context from supported individual LinkedIn post pages; Phase 3 targets one explicitly selected Top-Level Feed Post on the supported home feed. AI assistance is not implemented yet.
 
 ## Requirements
 
@@ -55,9 +55,10 @@ Load the generated `dist` directory through Chrome's **Load unpacked** option.
 7. Confirm HTTP LinkedIn URLs, unsupported subdomains such as `learning.linkedin.com`, and lookalike domains such as `linkedin.com.example.com` are not detected.
 8. Simulate or encounter an unavailable active-tab URL and confirm the popup shows its error state without crashing; select **Retry** and confirm detection runs again.
 9. Open a supported individual LinkedIn post page and confirm the popup shows the author and full authored post text.
-10. Confirm feed, profile, search, company, and other unsupported LinkedIn paths show individual-post guidance.
-11. Confirm a collapsed post shows the exact guidance to expand “see more” manually, then select **Retry**.
-12. Confirm media-only, shared-only, ambiguous, missing-author, and missing-post-text cases fail clearly without mutating the LinkedIn page.
+10. Confirm `/feed/` shows Start selection, temporary Use this post controls target only top-level feed posts, cancellation removes them, and the selected context previews successfully.
+11. Confirm feed, profile, search, company, and other unsupported LinkedIn paths show individual-post guidance.
+12. Confirm a collapsed post shows the exact guidance to expand “see more” manually, then select **Retry**.
+13. Confirm media-only, shared-only, ambiguous, missing-author, and missing-post-text cases fail clearly without mutating the LinkedIn page.
 
 ## Architecture
 
@@ -73,15 +74,15 @@ Chrome active-tab access, URL classification, and on-demand scripting
 
 The popup owns presentation and transient loading state. The detection module hides Chrome tab access and URL classification. The LinkedIn context adapter hides route recognition, DOM candidate selection, normalization, and typed extraction outcomes behind a separate interface.
 
-Future phases may introduce feed-post targeting, targeted comment/reply extraction, a prompt engine, LLM adapters, and storage. Those capabilities remain documented rather than implemented before their requirements exist.
+Future phases may introduce targeted comment/reply extraction, a prompt engine, LLM adapters, and storage. Those capabilities remain documented rather than implemented before their requirements exist.
 
 ## Privacy and control
 
-Phase 2 requests Chrome's scripting capability alongside temporary activeTab access so it can inspect the active individual-post page only when the user opens the popup. It makes no network requests, stores or transmits no URL or post content, and uses no telemetry. Extraction is read-only: modaicom never clicks “see more,” modifies the page, inserts text, or publishes a comment or reply.
+Phases 2 and 3 request Chrome's scripting capability alongside temporary activeTab access so they can inspect an individual post or the selected home-feed post only after the user opens the popup and explicitly starts selection. It makes no network requests, stores or transmits no URL or post content, and uses no telemetry. Extraction is read-only: modaicom never clicks “see more,” publishes a comment or reply, or automatically selects a post. Phase 3 adds only temporary page controls and a selection banner, removed after each terminal outcome.
 
 ## Status
 
-Implemented scope includes Phase 0 Foundation, Phase 1 LinkedIn Detection, and Phase 2 Primary Post context extraction. Feed-post targeting, comment/reply extraction, AI generation, editor insertion, and publishing automation remain outside this scope.
+Implemented scope includes Phase 0 Foundation, Phase 1 LinkedIn Detection, Phase 2 Primary Post context extraction, and Phase 3 Feed-Post Targeting. Comment/reply extraction, AI generation, editor insertion, and publishing automation remain outside this scope.
 
 ## License
 

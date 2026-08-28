@@ -8,8 +8,7 @@ export async function detectCurrentPage(): Promise<DetectionResult> {
 
   try {
     ;[activeTab] = await chrome.tabs.query({ active: true, currentWindow: true })
-  } catch (error) {
-    console.error('LinkedIn detection failed', error)
+  } catch {
     return { kind: 'error' }
   }
 
@@ -22,7 +21,6 @@ export async function detectCurrentPage(): Promise<DetectionResult> {
   try {
     url = new URL(activeTab.url)
   } catch {
-    console.error('LinkedIn detection failed: malformed active-tab URL')
     return { kind: 'error' }
   }
 

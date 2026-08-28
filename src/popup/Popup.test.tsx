@@ -103,4 +103,33 @@ describe('Popup', () => {
     await screen.findByText('Expanded post.')
     expect(executeScript).toHaveBeenCalledTimes(2)
   })
+
+  it('starts user-driven feed selection and shows the selection prompt', async () => {
+    const user = userEvent.setup()
+    query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/feed/' }])
+    executeScript
+      .mockResolvedValueOnce([{ result: { kind: 'unsupported-surface' } }])
+      .mockResolvedValueOnce([{ result: { kind: 'ready', count: 2 } }])
+
+    render(<Popup />)
+
+    await screen.findByText('Select a LinkedIn post to continue.')
+    await user.click(screen.getByRole('button', { name: 'Start selection' }))
+    expect(await screen.findByText('Choose a post on LinkedIn, then reopen modaicom.')).toBeInTheDocument()
+  })
+
+  it('shows a typed selection failure with a restart action', async () => {
+    const user = userEvent.setup()
+    query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/feed/' }])
+    executeScript.mockResolvedValue([{ result: { kind: 'unsupported-surface' } }])
+
+    render(<Popup />)
+
+    await screen.findByText('Select a LinkedIn post to continue.')
+    executeScript.mockResolvedValueOnce([{ result: { kind: 'no-candidates' } }])
+    await user.click(screen.getByRole('button', { name: 'Start selection' }))
+    expect(await screen.findByText('No selectable LinkedIn posts were found. Try again.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start selection' })).toBeInTheDocument()
+  })
+
 })
