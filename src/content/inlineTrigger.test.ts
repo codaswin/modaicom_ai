@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { composerIsEligible, isSupportedRoute, observationScopes, postCandidates } from './inlineTrigger'
+import { composerIsEligible, isSupportedRoute, observationScopes, postCandidates, reconcile } from './inlineTrigger'
 
 describe('inline trigger content boundary', () => {
   it('supports only the feed and recognized individual-post routes', () => {
@@ -30,8 +30,98 @@ describe('inline trigger content boundary', () => {
     expect(composerIsEligible(search)).toBe(false)
     expect(composerIsEligible(postComposer)).toBe(false)
     expect(composerIsEligible(owned)).toBe(false)
+    genuineRoot.remove()
   })
-})
+
+  it('recognizes the current labelled LinkedIn comment editor structure', () => {
+    const root = document.createElement('div')
+    root.className = 'comments-comment-box'
+    const editor = document.createElement('div')
+    editor.setAttribute('contenteditable', 'true')
+    editor.setAttribute('aria-label', 'Add a comment')
+    root.append(editor)
+    document.body.append(root)
+    expect(composerIsEligible(editor)).toBe(true)
+    root.remove()
+  })
+
+  it('rejects reply editors even with a generic comment label', () => {
+    const reply = document.createElement('div')
+    reply.className = 'comments-comment-box reply'
+    const editor = document.createElement('div')
+    editor.setAttribute('contenteditable', 'true')
+    editor.setAttribute('aria-label', 'Add a comment')
+    reply.append(editor)
+    document.body.append(reply)
+    expect(composerIsEligible(editor)).toBe(false)
+    reply.remove()
+  })
+
+  it('recognizes the current LinkedIn scaffold feed and labelled editor structure', () => {
+    const main = document.createElement('main')
+    const feed = document.createElement('div')
+    feed.className = 'scaffold-finite-scroll__content'
+    const post = document.createElement('div')
+    post.className = 'feed-shared-update-v2'
+    post.setAttribute('data-urn', 'urn:li:activity:current')
+    const body = document.createElement('div')
+    body.className = 'feed-shared-update-v2__description'
+    const composer = document.createElement('div')
+    composer.className = 'comments-comment-box'
+    const editor = document.createElement('div')
+    editor.setAttribute('contenteditable', 'true')
+    editor.setAttribute('aria-label', 'Add a comment')
+    composer.append(editor)
+    post.append(body, composer)
+    feed.append(post)
+    main.append(feed)
+    document.body.append(main)
+    expect(postCandidates(document, 'https://www.linkedin.com/feed/')).toEqual([post])
+    expect(composerIsEligible(editor)).toBe(true)
+    reconcile('https://www.linkedin.com/feed/')
+    expect(document.querySelectorAll('[data-modaicom-inline-wrapper]').length).toBe(1)
+    const laterPost = document.createElement('div')
+    laterPost.className = 'feed-shared-update-v2'
+    laterPost.setAttribute('data-urn', 'urn:li:activity:later')
+    const laterBody = document.createElement('div')
+    laterBody.className = 'feed-shared-update-v2__description'
+    const laterComposer = document.createElement('div')
+    laterComposer.className = 'comments-comment-box'
+    const laterEditor = document.createElement('div')
+    laterEditor.setAttribute('contenteditable', 'true')
+    laterEditor.setAttribute('aria-label', 'Add a comment')
+    laterComposer.append(laterEditor)
+    laterPost.append(laterBody, laterComposer)
+    feed.append(laterPost)
+    expect(postCandidates(document, 'https://www.linkedin.com/feed/')).toEqual([post, laterPost])
+    reconcile('https://www.linkedin.com/feed/')
+    expect(document.querySelectorAll('[data-modaicom-inline-wrapper]').length).toBe(2)
+    main.remove()
+  })
+
+  it('rejects nested activity roots and duplicate stable IDs', () => {
+    const main = document.createElement('main')
+    const feed = document.createElement('div')
+    feed.className = 'scaffold-finite-scroll__content'
+    const outer = document.createElement('div')
+    outer.className = 'feed-shared-update-v2'
+    outer.setAttribute('data-urn', 'urn:li:activity:outer')
+    const outerBody = document.createElement('div')
+    outerBody.className = 'feed-shared-update-v2__description'
+    const nested = document.createElement('div')
+    nested.className = 'feed-shared-update-v2'
+    nested.setAttribute('data-urn', 'urn:li:activity:nested')
+    const nestedBody = document.createElement('div')
+    nestedBody.className = 'feed-shared-update-v2__description'
+    nested.append(nestedBody)
+    outer.append(outerBody, nested)
+    const duplicate = outer.cloneNode(true) as HTMLElement
+    feed.append(outer, duplicate)
+    main.append(feed)
+    document.body.append(main)
+    expect(postCandidates(document, 'https://www.linkedin.com/feed/')).toEqual([])
+    main.remove()
+  })
 
   it('excludes unrelated activity cards and observes only the feed container', () => {
     const main = document.createElement('main')
@@ -52,3 +142,4 @@ describe('inline trigger content boundary', () => {
     expect(observationScopes('https://www.linkedin.com/feed/')).not.toContain(document.body)
     main.remove()
   })
+})
