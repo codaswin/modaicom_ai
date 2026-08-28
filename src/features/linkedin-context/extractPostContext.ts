@@ -168,6 +168,7 @@ export function extractPostContextInPage(
   const authorDisplayName = textFrom([
     '[data-testid="actor-name"]',
     '[data-test-id="feed-shared-actor__name"]',
+    '.update-components-actor__name',
     '[aria-label^="By "]',
   ])?.replace(/^By\s+/i, '')
   if (!authorDisplayName) {

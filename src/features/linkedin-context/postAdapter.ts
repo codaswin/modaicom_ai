@@ -7,7 +7,20 @@ export const ORIGINAL_BODY_SELECTORS = [
   '[data-test-id="feed-shared-update-v2__description"]',
   '.feed-shared-update-v2__description',
   '.feed-shared-inline-show-more-text',
+  '.update-components-text',
 ]
+
+export function feedContainerVariant(root: Element): string | undefined {
+  if (root.matches('main [role="feed"]')) return 'role-feed'
+  if (root.matches('main .scaffold-finite-scroll__content')) return 'scaffold-finite-scroll'
+  return undefined
+}
+
+export function postRootVariant(root: Element): string | undefined {
+  if (root.matches('article[data-urn^="urn:li:activity:"], article[data-id^="urn:li:activity:"]')) return 'article'
+  if (root.matches('.feed-shared-update-v2[data-urn^="urn:li:activity:"], .feed-shared-update-v2[data-id^="urn:li:activity:"]')) return 'feed-shared-update-v2'
+  return undefined
+}
 
 export function stablePostIdentity(post: Element): string | undefined {
   const value = post.getAttribute('data-urn') ?? post.getAttribute('data-id')

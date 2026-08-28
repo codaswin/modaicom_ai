@@ -200,6 +200,14 @@ describe('extractPostContextFromDocument', () => {
     })
   })
 
+  it('extracts the current update-components author and body structure', () => {
+    expect(extract(`
+      <article class="feed-shared-update-v2" data-urn="urn:li:activity:current">
+        <span class="update-components-actor__name">Ada Lovelace</span>
+        <div class="update-components-text"><span>Current feed text.</span></div>
+      </article>`)).toMatchObject({ kind: 'success', context: { authorDisplayName: 'Ada Lovelace', originalAuthoredText: 'Current feed text.' } })
+  })
+
   it('never includes the URL in context', () => {
     const result = extract(
       '<article data-urn="urn:li:activity:123"><div data-testid="actor-name">Ada</div><div data-testid="post-body">Text</div></article>',
