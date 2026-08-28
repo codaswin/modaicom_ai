@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   extractCurrentPostContext,
   extractPostContextFromDocument,
+  extractPostContextFromElementInPage,
   type PostExtractionResult,
 } from './extractPostContext'
 
@@ -17,6 +18,26 @@ function extract(markup: string, url?: string): PostExtractionResult {
 }
 
 describe('extractPostContextFromDocument', () => {
+  it('extracts the current div-based activity root used by inline targeting', () => {
+    const target = page(`
+      <div class="feed-shared-update-v2" data-urn="urn:li:activity:456">
+        <div class="feed-shared-update-v2__description">Current post text.</div>
+        <div data-testid="actor-name">Ada Lovelace</div>
+      </div>
+    `, 'https://www.linkedin.com/feed/update/urn:li:activity:456/')
+    const post = target.document.querySelector('.feed-shared-update-v2')
+    expect(post).not.toBeNull()
+    expect(extractPostContextFromElementInPage(post as Element, target.url)).toEqual({
+      kind: 'success',
+      context: {
+        authorDisplayName: 'Ada Lovelace',
+        originalAuthoredText: 'Current post text.',
+        stablePostIdentifier: 'urn:li:activity:456',
+      },
+    })
+  })
+
+
   it('extracts required fields and permitted optional metadata', () => {
     expect(
       extract(`

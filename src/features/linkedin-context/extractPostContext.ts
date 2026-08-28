@@ -1,4 +1,5 @@
 import { classifyLinkedInRoute } from './routes'
+import { FEED_CONTAINER_SELECTOR, FEED_POST_ROOT_SELECTOR, POST_ROOT_SELECTOR, ORIGINAL_BODY_SELECTORS, findOriginalBody, isValidatedPostRoot, stablePostIdentity } from './postAdapter'
 
 export type ExtractedPostContext = {
   authorDisplayName: string
@@ -44,14 +45,15 @@ export function extractPostContextInPage(
   }
 
   if (isFeedRoute && root.nodeType === Node.DOCUMENT_NODE) return { kind: 'unsupported-surface' }
+  if (root.nodeType === Node.ELEMENT_NODE && !isValidatedPostRoot(root as Element, isFeedRoute)) return { kind: 'post-not-found' }
 
   const candidateSelector = isFeedRoute
-    ? 'article[data-urn^="urn:li:activity:"], article[data-id^="urn:li:activity:"]'
-    : 'article[data-urn], article[data-id], [data-urn^="urn:li:activity:"], [data-id^="urn:li:activity:"]'
+    ? FEED_POST_ROOT_SELECTOR
+    : POST_ROOT_SELECTOR
   const isElementRoot = root.nodeType === Node.ELEMENT_NODE
   const pageDocument = root.nodeType === Node.DOCUMENT_NODE ? (root as Document) : root.ownerDocument
   const candidateRoot = isFeedRoute
-    ? (isElementRoot ? root : pageDocument?.querySelector<HTMLElement>('main [role="feed"]'))
+    ? (isElementRoot ? root : pageDocument?.querySelector<HTMLElement>(FEED_CONTAINER_SELECTOR))
     : root
   const markedCandidates = isElementRoot
     ? [root as HTMLElement]
@@ -80,13 +82,7 @@ export function extractPostContextInPage(
     element.closest(candidateSelector) === candidate ||
     (candidate.matches('article') && !element.closest(candidateSelector))
 
-  const bodySelectors = [
-    '[data-testid="post-body"]',
-    '[data-testid="expandable-text-box"]',
-    '[data-test-id="feed-shared-update-v2__description"]',
-    '.feed-shared-update-v2__description',
-    '.feed-shared-inline-show-more-text',
-  ]
+  const bodySelectors = ORIGINAL_BODY_SELECTORS
 
   const findElement = (selectors: string[]) => {
     for (const selector of selectors) {
@@ -149,7 +145,7 @@ export function extractPostContextInPage(
       .trim()
   }
 
-  const authoredBody = findElement(bodySelectors)
+  const authoredBody = findOriginalBody(candidate) ?? findElement(bodySelectors)
   const hasSeeMore = authoredBody
     ? Array.from(
         authoredBody.querySelectorAll<HTMLElement>(
@@ -195,8 +191,7 @@ export function extractPostContextInPage(
     '[data-test-id="feed-shared-actor__sub-description"]',
   ])
 
-  const explicitIdentifier =
-    candidate.getAttribute('data-urn') ?? candidate.getAttribute('data-id')
+  const explicitIdentifier = stablePostIdentity(candidate)
   const stablePostIdentifier =
     explicitIdentifier?.startsWith('urn:li:') && explicitIdentifier.trim()
       ? explicitIdentifier.trim()

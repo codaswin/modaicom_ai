@@ -1,13 +1,12 @@
 import { extractPostContextFromElementInPage, type PostExtractionResult } from '../features/linkedin-context/extractPostContext'
 import { classifyLinkedInRoute } from '../features/linkedin-context/routes'
+import { FEED_CONTAINER_SELECTOR, FEED_POST_ROOT_SELECTOR, POST_ROOT_SELECTOR, isValidatedPostRoot, stablePostIdentity } from '../features/linkedin-context/postAdapter'
 import { RELAY_VERSION } from '../shared/relay'
 import { EDITOR_SELECTOR, isEligibleCommentComposer } from './composerAdapter'
 
 const OWNED_WRAPPER = 'data-modaicom-inline-wrapper'
 const OWNER_TOKEN = 'data-modaicom-inline-target'
 const BUSY = 'data-modaicom-inline-busy'
-const POST_SELECTOR = 'article[data-urn], article[data-id], [data-urn^="urn:li:activity:"], [data-id^="urn:li:activity:"]'
-const FEED_POST_SELECTOR = 'article[data-urn^="urn:li:activity:"], article[data-id^="urn:li:activity:"], .feed-shared-update-v2[data-urn^="urn:li:activity:"], .feed-shared-update-v2[data-id^="urn:li:activity:"]'
 let generation = 0
 const sessionId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `session-${Math.random().toString(36).slice(2)}`
 let observer: MutationObserver | undefined
@@ -21,29 +20,29 @@ const originalHistory: Partial<Record<'pushState' | 'replaceState', History['pus
 
 export function isSupportedRoute(urlString = location.href): boolean { return classifyLinkedInRoute(urlString) !== 'unsupported' }
 function isFeedRoute(urlString = location.href): boolean { return classifyLinkedInRoute(urlString) === 'feed' }
-function feedRoot(root: Document | Element = document): HTMLElement | undefined { return root.querySelector<HTMLElement>('main [role="feed"], main .scaffold-finite-scroll__content') ?? undefined }
+function feedRoot(root: Document | Element = document): HTMLElement | undefined { return root.querySelector<HTMLElement>(FEED_CONTAINER_SELECTOR) ?? undefined }
 export function postCandidates(root: Document | Element = document, urlString = location.href): HTMLElement[] {
   const feed = isFeedRoute(urlString)
   const scope = feed ? feedRoot(root) : root
-  const selector = feed ? FEED_POST_SELECTOR : POST_SELECTOR
+  const selector = feed ? FEED_POST_ROOT_SELECTOR : POST_ROOT_SELECTOR
   const found = Array.from(scope?.querySelectorAll<HTMLElement>(selector) ?? []).filter((candidate) => !candidate.parentElement?.closest(selector))
   if (!feed) return found
-  const owned = found.filter((candidate) => (candidate.closest('[role="feed"]') === scope || candidate.closest('.scaffold-finite-scroll__content') === scope) && candidate.querySelector('[data-testid="post-body"], [data-testid="expandable-text-box"], [data-test-id="feed-shared-update-v2__description"], .feed-shared-update-v2__description, .feed-shared-inline-show-more-text'))
+  const owned = found.filter((candidate) => candidate.closest(FEED_CONTAINER_SELECTOR) === scope && isValidatedPostRoot(candidate, true))
   const counts = new Map<string, number>()
-  owned.forEach((candidate) => { const id = (candidate.getAttribute('data-urn') ?? candidate.getAttribute('data-id'))?.trim(); if (id) counts.set(id, (counts.get(id) ?? 0) + 1) })
-  return owned.filter((candidate) => { const id = (candidate.getAttribute('data-urn') ?? candidate.getAttribute('data-id'))?.trim(); return Boolean(id && counts.get(id) === 1) })
+  owned.forEach((candidate) => { const id = stablePostIdentity(candidate); if (id) counts.set(id, (counts.get(id) ?? 0) + 1) })
+  return owned.filter((candidate) => { const id = stablePostIdentity(candidate); return Boolean(id && counts.get(id) === 1) })
 }
 export { isEligibleCommentComposer as composerIsEligible }
 function owningPost(editor: HTMLElement, urlString = location.href): HTMLElement | undefined {
   const candidates = postCandidates(document, urlString)
-  const owner = editor.closest<HTMLElement>(isFeedRoute(urlString) ? FEED_POST_SELECTOR : POST_SELECTOR)
+  const owner = editor.closest<HTMLElement>(isFeedRoute(urlString) ? FEED_POST_ROOT_SELECTOR : POST_ROOT_SELECTOR)
   if (owner && candidates.includes(owner)) return owner
   const sole = candidates[0]
   return !isFeedRoute(urlString) && candidates.length === 1 && sole ? (sole.contains(editor) ? sole : undefined) : undefined
 }
 function removeOwnedUi(): void { document.querySelectorAll(`[${OWNED_WRAPPER}]`).forEach((node) => node.remove()); document.querySelectorAll(`[${OWNER_TOKEN}]`).forEach((node) => node.removeAttribute(OWNER_TOKEN)) }
 function sendClearRelay(): void { if (typeof chrome === 'undefined') return; void chrome.runtime.sendMessage({ version: RELAY_VERSION, type: 'CLEAR_RELAY', sessionId }).catch(() => undefined) }
-function ownerKey(owner: HTMLElement): string { const existing = ownerKeys.get(owner); if (existing) return existing; const stable = owner.getAttribute('data-urn') ?? owner.getAttribute('data-id'); const key = stable?.trim() || `ephemeral-${Math.random().toString(36).slice(2)}`; ownerKeys.set(owner, key); return key }
+function ownerKey(owner: HTMLElement): string { const existing = ownerKeys.get(owner); if (existing) return existing; const stable = stablePostIdentity(owner); const key = stable?.trim() || `ephemeral-${Math.random().toString(36).slice(2)}`; ownerKeys.set(owner, key); return key }
 function insertTrigger(editor: HTMLElement, owner: HTMLElement, key: string): void {
   if (Array.from(document.querySelectorAll<HTMLElement>(`[${OWNED_WRAPPER}]`)).some((node) => node.dataset.modaicomOwner === key)) return
   const wrapper = document.createElement('span'); wrapper.dataset.modaicomInlineWrapper = ''; wrapper.dataset.modaicomOwner = key
