@@ -10,9 +10,14 @@ function setupChrome(store: Map<string, unknown>) {
     remove: vi.fn(async (key: string) => { store.delete(key) }),
   }
   vi.stubGlobal('chrome', {
-    runtime: { id: 'extension', onMessage: { addListener: vi.fn() } },
-    storage: { session },
+    runtime: {
+      id: 'extension',
+      onMessage: { addListener: vi.fn() },
+      onConnect: { addListener: vi.fn() },
+    },
+    storage: { session, local: { get: vi.fn(async () => ({})), set: vi.fn(async () => undefined), remove: vi.fn(async () => undefined) } },
     tabs: { query: vi.fn(async () => [{ id: 1 }]), onRemoved: { addListener: vi.fn() } },
+    permissions: { contains: vi.fn(async () => true) },
   })
   return session
 }

@@ -25,4 +25,22 @@ export default tseslint.config(
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
+  {
+    // ADR-0008: the API key must never be reachable from code that runs near
+    // LinkedIn or in the popup. keyStore is service-worker / options-page only.
+    files: ['src/content/**/*.{ts,tsx}', 'src/popup/**/*.{ts,tsx}', 'src/features/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/background/keyStore', '**/background/keyStore.*', '**/keyStore'],
+              message: 'keyStore holds the API key and is service-worker / options-page only (ADR-0008).',
+            },
+          ],
+        },
+      ],
+    },
+  },
 )

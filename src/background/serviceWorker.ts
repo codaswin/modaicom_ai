@@ -10,6 +10,7 @@ import {
   type RelayMessage,
   type SessionRelayRecord,
 } from '../shared/relay'
+import { registerGenerationHandlers } from './generation'
 
 const tabOperations = new Map<number, Promise<void>>()
 
@@ -108,5 +109,7 @@ chrome.runtime.onMessage.addListener((rawMessage: unknown, sender, sendResponse)
 chrome.tabs.onRemoved.addListener((tabId) => {
   void clearRelay(tabId, undefined, true)
 })
+
+registerGenerationHandlers()
 
 export { clearRelay, handleRelayMessage, readAndClearRelay, writeRelay }

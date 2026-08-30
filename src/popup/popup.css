@@ -150,3 +150,44 @@ button {
 
 .context-panel__message {
   font-size: 13px;
+
+.generation {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e3e3e3;
+}
+
+.generation__go {
+  padding: 0.4rem 0.9rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.generation__hint {
+  margin: 0.25rem 0;
+  color: #555;
+}
+
+.generation__error {
+  margin: 0.25rem 0;
+  color: #b3261e;
+}
+
+.draft__label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.draft__text {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  resize: vertical;
+}
+
+.draft__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
