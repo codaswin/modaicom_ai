@@ -1,6 +1,7 @@
-import { isPostExtractionResult, type PostExtractionResult } from '../features/linkedin-context/extractPostContext'
+import { isInteractionExtractionResult, type InteractionExtractionResult } from '../features/linkedin-context/interactionContext'
+import { RELAY_VERSION } from './protocol'
 
-export const RELAY_VERSION = 1 as const
+export { RELAY_VERSION }
 export const RELAY_TTL_MS = 5 * 60 * 1000
 export const RELAY_KEY_PREFIX = 'modaicom.relay.'
 export const GENERATION_KEY_PREFIX = 'modaicom.generation.'
@@ -10,7 +11,7 @@ export type InlineExtractionResultMessage = {
   type: 'INLINE_EXTRACTION_RESULT'
   generation: number
   sessionId: string
-  result: PostExtractionResult
+  result: InteractionExtractionResult
 }
 export type ClearRelayMessage = { version: typeof RELAY_VERSION; type: 'CLEAR_RELAY'; sessionId?: string }
 export type GetLatestRelayMessage = { version: typeof RELAY_VERSION; type: 'GET_LATEST_RELAY' }
@@ -27,7 +28,7 @@ export type GenerationRecord = {
 
 export type SessionRelayRecord = {
   version: typeof RELAY_VERSION
-  result: PostExtractionResult
+  result: InteractionExtractionResult
   createdAt: number
   expiresAt: number
   generation: number
@@ -46,7 +47,7 @@ export function isRelayMessage(value: unknown): value is RelayMessage {
   const candidate = value as Record<string, unknown>
   if (candidate.version !== RELAY_VERSION || typeof candidate.type !== 'string') return false
   if (candidate.type === 'INLINE_EXTRACTION_RESULT') {
-    return typeof candidate.generation === 'number' && Number.isFinite(candidate.generation) && typeof candidate.sessionId === 'string' && candidate.sessionId.length > 0 && isPostExtractionResult(candidate.result)
+    return typeof candidate.generation === 'number' && Number.isFinite(candidate.generation) && typeof candidate.sessionId === 'string' && candidate.sessionId.length > 0 && isInteractionExtractionResult(candidate.result)
   }
   if (candidate.type === 'CLEAR_RELAY') return candidate.sessionId === undefined || typeof candidate.sessionId === 'string'
   return candidate.type === 'GET_LATEST_RELAY'
@@ -64,7 +65,7 @@ export function isSessionRelayRecord(value: unknown): value is SessionRelayRecor
     Number.isFinite(candidate.expiresAt) &&
     Number.isFinite(candidate.generation) &&
     candidate.expiresAt > candidate.createdAt &&
-    isPostExtractionResult(candidate.result)
+    isInteractionExtractionResult(candidate.result)
   )
 }
 

@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import {
-  detectCurrentPage,
-  type DetectionResult,
-} from '../features/linkedin-detection/detectCurrentPage'
-import { extractCurrentPostContext, isPostExtractionResult, type PostExtractionResult } from '../features/linkedin-context/extractPostContext'
+import { detectCurrentPage, type DetectionResult } from '../features/linkedin-detection/detectCurrentPage'
+import { requestPageInteractionContext } from '../features/linkedin-context/extractInteractionContext'
+import { isInteractionExtractionResult, type InteractionExtractionResult, type LinkedInInteractionContext } from '../features/linkedin-context/interactionContext'
+import type { ExtractedPostContext } from '../features/linkedin-context/extractPostContext'
 import { isSupportedFeedUrl } from '../features/linkedin-context/routes'
 import { RELAY_VERSION } from '../shared/relay'
 import './popup.css'
 
 type PopupState = DetectionResult['kind'] | 'loading'
-type ContextState = PostExtractionResult | { kind: 'context-loading' }
+type ContextState = InteractionExtractionResult | { kind: 'context-loading' }
+type FailureKind = Exclude<InteractionExtractionResult['kind'], 'success'>
 
 type ActionButtonProps = { label: string; onClick: () => void }
 function ActionButton({ label, onClick }: ActionButtonProps) {
@@ -37,9 +37,15 @@ const contextMessages = {
   'no-candidates': 'No selectable LinkedIn posts were found. Try again.',
   'ambiguous-candidates': 'LinkedIn posts could not be identified reliably. Try again.',
   'selection-failure': 'Unable to start selection on this page. Try again.',
-} satisfies Record<Exclude<PostExtractionResult['kind'], 'success'>, string>
+  'comment-not-found': 'That comment could not be found. Try the modaicom trigger again.',
+  'comment-author-not-found': 'The comment author could not be found. Try again.',
+  'comment-no-text': 'No comment text was found. Try again if LinkedIn is still loading.',
+  'comment-collapsed': 'This comment is collapsed. Expand it on LinkedIn, then Retry.',
+  'comment-stale-target': 'That comment changed or was removed. Try the modaicom trigger again.',
+  'ambiguous-target-comment': 'That reply could not be tied to one comment. Try the modaicom trigger again.',
+} satisfies Record<FailureKind, string>
 
-const retryableContextKinds = new Set<PostExtractionResult['kind']>([
+const retryableContextKinds = new Set<FailureKind>([
   'collapsed-post',
   'post-not-found',
   'ambiguous-post',
@@ -47,7 +53,41 @@ const retryableContextKinds = new Set<PostExtractionResult['kind']>([
   'author-not-found',
   'unexpected-error',
   'stale-target',
+  'comment-not-found',
+  'comment-author-not-found',
+  'comment-no-text',
+  'comment-collapsed',
+  'comment-stale-target',
+  'ambiguous-target-comment',
 ])
+
+function PostView({ post, subhead }: { post: ExtractedPostContext; subhead?: string }) {
+  return (
+    <>
+      {subhead ? <p className="context-panel__subhead">{subhead}</p> : null}
+      <p className="context-panel__author">{post.authorDisplayName}</p>
+      <p className="context-panel__text">{post.originalAuthoredText}</p>
+      {post.authorHeadline ? <p className="context-panel__metadata">{post.authorHeadline}</p> : null}
+      {post.publicationTimeLabel ? <p className="context-panel__metadata">{post.publicationTimeLabel}</p> : null}
+    </>
+  )
+}
+
+function InteractionView({ context }: { context: LinkedInInteractionContext }) {
+  if (context.kind === 'post-comment') {
+    return <PostView post={context.post} />
+  }
+  return (
+    <>
+      <p className="context-panel__reply-header">Replying in {context.targetComment.authorDisplayName}’s thread</p>
+      <p className="context-panel__text">{context.targetComment.authoredText}</p>
+      <section className="context-panel__owning-post" aria-label="On this post">
+        <PostView post={context.post} subhead="On this post" />
+      </section>
+    </>
+  )
+}
+
 export function Popup() {
   const [result, setResult] = useState<DetectionResult | null>(null)
   const [contextResult, setContextResult] = useState<ContextState | null>(null)
@@ -62,10 +102,10 @@ export function Popup() {
     }
   }
 
-  const readRelay = async (): Promise<PostExtractionResult | null> => {
+  const readRelay = async (): Promise<InteractionExtractionResult | null> => {
     try {
-      const result: unknown = await chrome.runtime.sendMessage({ version: RELAY_VERSION, type: 'GET_LATEST_RELAY' })
-      return isPostExtractionResult(result) ? result : null
+      const relayResult: unknown = await chrome.runtime.sendMessage({ version: RELAY_VERSION, type: 'GET_LATEST_RELAY' })
+      return isInteractionExtractionResult(relayResult) ? relayResult : null
     } catch {
       return null
     }
@@ -88,7 +128,7 @@ export function Popup() {
     } else if (feed) {
       setContextResult({ kind: 'unsupported-surface' })
     } else {
-      setContextResult(await extractCurrentPostContext())
+      setContextResult(await requestPageInteractionContext())
     }
   }, [])
 
@@ -98,16 +138,18 @@ export function Popup() {
   const presentation = statePresentation[state]
   const context = state === 'linkedin' ? contextResult : null
   const showNeutralFeed = Boolean(isFeed && context?.kind === 'unsupported-surface')
-  const canRetryContext = Boolean(context && !showNeutralFeed && retryableContextKinds.has(context.kind as PostExtractionResult['kind']))
+  const canRetryContext = Boolean(
+    context && context.kind !== 'context-loading' && context.kind !== 'success' && !showNeutralFeed && retryableContextKinds.has(context.kind),
+  )
 
   return (
     <main className="popup">
       <header className="popup__header"><span className="popup__brand-mark" aria-hidden="true">m</span><h1>modaicom</h1></header>
       <div className={`status status--${state}`} role="status" aria-live="polite"><span className="status__icon" aria-hidden="true">{presentation.icon}</span><span className="status__message">{presentation.message}</span></div>
       {presentation.canRetry ? <ActionButton label="Retry" onClick={load} /> : null}
-      {context ? <section className="context-panel" aria-label="LinkedIn post context">
-        {context.kind === 'context-loading' ? <p className="context-panel__message">Reading LinkedIn post…</p> :
-          context.kind === 'success' ? <><p className="context-panel__author">{context.context.authorDisplayName}</p><p className="context-panel__text">{context.context.originalAuthoredText}</p>{context.context.authorHeadline ? <p className="context-panel__metadata">{context.context.authorHeadline}</p> : null}{context.context.publicationTimeLabel ? <p className="context-panel__metadata">{context.context.publicationTimeLabel}</p> : null}</> :
+      {context ? <section className="context-panel" aria-label="LinkedIn context">
+        {context.kind === 'context-loading' ? <p className="context-panel__message">Reading LinkedIn context…</p> :
+          context.kind === 'success' ? <InteractionView context={context.context} /> :
           <><p className="context-panel__message">{showNeutralFeed ? 'Select a LinkedIn post to continue.' : contextMessages[context.kind]}</p>{canRetryContext ? <ActionButton label="Retry" onClick={load} /> : null}</>}
       </section> : null}
     </main>

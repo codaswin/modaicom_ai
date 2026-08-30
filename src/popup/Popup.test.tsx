@@ -68,10 +68,7 @@ describe('Popup', () => {
     query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example-activity-123' }])
     tabsSendMessage.mockResolvedValue({
       kind: 'success',
-      context: {
-        authorDisplayName: 'Ada Lovelace',
-        originalAuthoredText: 'A useful post.',
-      },
+      context: { kind: 'post-comment', post: { authorDisplayName: 'Ada Lovelace', originalAuthoredText: 'A useful post.' } },
     })
 
     render(<Popup />)
@@ -79,7 +76,7 @@ describe('Popup', () => {
     await screen.findByText('LinkedIn detected ✓')
     expect(await screen.findByText('A useful post.')).toBeInTheDocument()
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
-    expect(tabsSendMessage).toHaveBeenCalledWith(1, { version: 1, type: 'REQUEST_PAGE_EXTRACTION' })
+    expect(tabsSendMessage).toHaveBeenCalledWith(1, { version: 2, type: 'REQUEST_PAGE_EXTRACTION' })
   })
 
   it('tells the user to expand collapsed text and retries fresh extraction', async () => {
@@ -89,10 +86,7 @@ describe('Popup', () => {
       .mockResolvedValueOnce({ kind: 'collapsed-post' })
       .mockResolvedValueOnce({
         kind: 'success',
-        context: {
-          authorDisplayName: 'Ada Lovelace',
-          originalAuthoredText: 'Expanded post.',
-        },
+        context: { kind: 'post-comment', post: { authorDisplayName: 'Ada Lovelace', originalAuthoredText: 'Expanded post.' } },
       })
 
     render(<Popup />)
@@ -116,13 +110,42 @@ describe('Popup', () => {
     query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/feed/' }])
     sendMessage.mockResolvedValue({
       kind: 'success',
-      context: { authorDisplayName: 'Ada Lovelace', originalAuthoredText: 'Relayed post.' },
+      context: { kind: 'post-comment', post: { authorDisplayName: 'Ada Lovelace', originalAuthoredText: 'Relayed post.' } },
     })
 
     render(<Popup />)
 
     expect(await screen.findByText('Relayed post.')).toBeInTheDocument()
-    expect(sendMessage).toHaveBeenCalledWith({ version: 1, type: 'GET_LATEST_RELAY' })
+    expect(sendMessage).toHaveBeenCalledWith({ version: 2, type: 'GET_LATEST_RELAY' })
+  })
+
+  it('shows a relayed comment-reply interaction with the thread disclosure and post context', async () => {
+    query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/feed/update/urn:li:activity:1/' }])
+    sendMessage.mockResolvedValue({
+      kind: 'success',
+      context: {
+        kind: 'comment-reply',
+        post: { authorDisplayName: 'Ada Lovelace', originalAuthoredText: 'Post text.' },
+        targetComment: { authorDisplayName: 'Grace Hopper', authoredText: 'A thoughtful comment.' },
+      },
+    })
+
+    render(<Popup />)
+
+    expect(await screen.findByText(/Replying in Grace Hopper.s thread/)).toBeInTheDocument()
+    expect(screen.getByText('A thoughtful comment.')).toBeInTheDocument()
+    expect(screen.getByText('On this post')).toBeInTheDocument()
+    expect(screen.getByText('Post text.')).toBeInTheDocument()
+  })
+
+  it('shows actionable copy and Retry for a comment-half failure', async () => {
+    query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/feed/update/urn:li:activity:1/' }])
+    sendMessage.mockResolvedValue({ kind: 'comment-collapsed' })
+
+    render(<Popup />)
+
+    expect(await screen.findByText(/This comment is collapsed/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
 })

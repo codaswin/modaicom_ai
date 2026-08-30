@@ -1,8 +1,42 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { composerIsEligible, isSupportedRoute, markRuntimeInvalidated, observationScopes, postCandidates, reconcile, teardownInlineTriggerContentScript, initializeInlineTriggerContentScript } from './inlineTrigger'
+import { composerIsEligible, handlePagePopupExtractionRequest, isSupportedRoute, markRuntimeInvalidated, observationScopes, postCandidates, reconcile, teardownInlineTriggerContentScript, initializeInlineTriggerContentScript } from './inlineTrigger'
 
 describe('inline trigger content boundary', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    document.body.innerHTML = ''
+  })
+
+  it('fails closed on an unrecognized feed markup regime', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const main = document.createElement('main')
+    // A comment composer with no recognized feed container around it.
+    const root = document.createElement('div')
+    root.setAttribute('data-testid', 'comment-box')
+    const editor = document.createElement('div')
+    editor.setAttribute('contenteditable', 'true')
+    editor.setAttribute('aria-label', 'Add a comment')
+    root.append(editor)
+    main.append(root)
+    document.body.append(main)
+
+    expect(postCandidates(document, 'https://www.linkedin.com/feed/')).toEqual([])
+    reconcile('https://www.linkedin.com/feed/')
+    expect(document.querySelectorAll('[data-modaicom-inline-wrapper]').length).toBe(0)
+    expect(warn).toHaveBeenCalled()
+    main.remove()
+  })
+
+  it('runs the page extractor only for a valid extraction request envelope', () => {
+    document.body.innerHTML = '<main><div data-testid="mainFeed" role="list"></div></main>'
+    expect(handlePagePopupExtractionRequest({ version: 2, type: 'REQUEST_PAGE_EXTRACTION' })).toEqual({
+      kind: 'unsupported-surface',
+    })
+    expect(handlePagePopupExtractionRequest({ version: 2, type: 'GET_LATEST_RELAY' })).toBeUndefined()
+    expect(handlePagePopupExtractionRequest(null)).toBeUndefined()
+  })
+
   it('supports only the feed and recognized individual-post routes', () => {
     expect(isSupportedRoute('https://www.linkedin.com/feed/')).toBe(true)
     expect(isSupportedRoute('https://linkedin.com/posts/example')).toBe(true)
@@ -217,6 +251,79 @@ describe('inline trigger content boundary', () => {
     expect(postCandidates(document, 'https://www.linkedin.com/feed/')).toEqual([valid])
     expect(observationScopes('https://www.linkedin.com/feed/')).toContain(feed)
     expect(observationScopes('https://www.linkedin.com/feed/')).not.toContain(document.body)
+    main.remove()
+  })
+
+  const ACTIVITY_URL = 'https://www.linkedin.com/feed/update/urn:li:activity:1/'
+
+  function legacyPostWithComment(commentUrn = 'urn:li:comment:(activity:1,10)') {
+    const main = document.createElement('main')
+    main.innerHTML = `
+      <div class="feed-shared-update-v2" data-urn="urn:li:activity:1">
+        <div data-testid="actor-name">Ada</div>
+        <div data-testid="post-body">Post body.</div>
+        <div class="comments-comment-box">
+          <div contenteditable="true" aria-label="Add a comment"></div>
+        </div>
+        <article class="comments-comment-entity" data-id="${commentUrn}">
+          <span class="comments-comment-meta__description-title">Grace</span>
+          <div class="comments-comment-item__main-content">A comment.</div>
+          <div class="comments-comment-box comments-comment-box--reply">
+            <div contenteditable="true" aria-placeholder="Add a reply…"></div>
+          </div>
+        </article>
+      </div>`
+    document.body.append(main)
+    return main
+  }
+
+  it('renders a comment-reply trigger beside a legacy reply composer and a post-comment trigger beside the comment box', () => {
+    const main = legacyPostWithComment()
+    reconcile(ACTIVITY_URL)
+    const wrappers = [...document.querySelectorAll('[data-modaicom-inline-wrapper]')]
+    expect(wrappers.length).toBe(2)
+    const owners = wrappers.map((w) => (w as HTMLElement).dataset.modaicomOwner)
+    expect(owners.some((o) => o?.startsWith('post-comment:'))).toBe(true)
+    expect(owners.some((o) => o === 'comment-reply:urn:li:comment:(activity:1,10)')).toBe(true)
+    // reply trigger sits next to the reply editor
+    const replyEditor = main.querySelector('[aria-placeholder="Add a reply…"]')!
+    expect(replyEditor.nextElementSibling?.querySelector('button')?.getAttribute('aria-label')).toBe('modaicom — draft a reply')
+    main.remove()
+  })
+
+  it('gives one comment-reply trigger per distinct target comment', () => {
+    const main = legacyPostWithComment('urn:li:comment:(activity:1,10)')
+    const post = main.querySelector('.feed-shared-update-v2')!
+    const second = document.createElement('article')
+    second.className = 'comments-comment-entity'
+    second.setAttribute('data-id', 'urn:li:comment:(activity:1,20)')
+    second.innerHTML = `<span class="comments-comment-meta__description-title">Alan</span><div class="comments-comment-item__main-content">Another.</div><div class="comments-comment-box comments-comment-box--reply"><div contenteditable="true" aria-placeholder="Add a reply…"></div></div>`
+    post.append(second)
+    reconcile(ACTIVITY_URL)
+    const replyWrappers = [...document.querySelectorAll('[data-modaicom-inline-wrapper]')].filter((w) =>
+      (w as HTMLElement).dataset.modaicomOwner?.startsWith('comment-reply:'),
+    )
+    expect(replyWrappers.map((w) => (w as HTMLElement).dataset.modaicomOwner).sort()).toEqual([
+      'comment-reply:urn:li:comment:(activity:1,10)',
+      'comment-reply:urn:li:comment:(activity:1,20)',
+    ])
+    main.remove()
+  })
+
+  it('suppresses any trigger on an SDUI reply composer (comment URN precedes the editor)', () => {
+    const main = document.createElement('main')
+    main.innerHTML = `
+      <div data-testid="mainFeed" role="list">
+        <div componentkey="k_MAIN_FEED"><div role="listitem">
+          <img alt="View Ada author's profile" />
+          <div data-testid="expandable-text-box">Post.</div>
+          <div id="hash_urn:li:comment:(urn:li:activity:1,9)"><span>Grace</span><span>A comment.</span></div>
+          <div><div contenteditable="true" role="textbox" aria-label="Text editor for creating comment" class="tiptap"></div></div>
+        </div></div>
+      </div>`
+    document.body.append(main)
+    reconcile('https://www.linkedin.com/feed/')
+    expect(document.querySelectorAll('[data-modaicom-inline-wrapper]').length).toBe(0)
     main.remove()
   })
 })

@@ -1,12 +1,21 @@
-import { extractPostContextFromElementInPage, extractPostContextInPage, type PostExtractionResult } from '../features/linkedin-context/extractPostContext'
+import { extractPostContextInPage } from '../features/linkedin-context/extractPostContext'
+import { extractInteractionContextInPage } from '../features/linkedin-context/extractInteractionContext'
+import { commentOwningPost, commentStableIdentity, isValidatedCommentRoot, legacyCommentRoot } from '../features/linkedin-context/commentAdapter'
+import { postExtractionToInteractionResult, type InteractionExtractionResult } from '../features/linkedin-context/interactionContext'
 import { classifyLinkedInRoute } from '../features/linkedin-context/routes'
-import { FEED_CONTAINER_SELECTOR, FEED_POST_ROOT_SELECTOR, POST_ROOT_SELECTOR, isValidatedPostRoot, stablePostIdentity, postRootVariant, feedContainerVariant } from '../features/linkedin-context/postAdapter'
+import { FEED_CONTAINER_SELECTOR, FEED_POST_ROOT_SELECTOR, POST_ROOT_SELECTOR, feedMarkupRegime, isValidatedPostRoot, stablePostIdentity, postRootVariant, feedContainerVariant } from '../features/linkedin-context/postAdapter'
 import { RELAY_VERSION } from '../shared/relay'
-import { EDITOR_SELECTOR, isEligibleCommentComposer } from './composerAdapter'
+import { isRequestPageExtractionMessage } from '../shared/protocol'
+import { EDITOR_SELECTOR, classifyComposer, isEligibleCommentComposer, looksLikeReplyComposer } from './composerAdapter'
 import { recordDiagnostic } from './diagnostics'
+
+type ResolvedTarget =
+  | { kind: 'post-comment'; postElement: HTMLElement; key: string }
+  | { kind: 'comment-reply'; postElement: HTMLElement; commentElement: HTMLElement; key: string }
 
 const OWNED_WRAPPER = 'data-modaicom-inline-wrapper'
 const OWNER_TOKEN = 'data-modaicom-inline-target'
+const COMMENT_TOKEN = 'data-modaicom-inline-comment-target'
 const BUSY = 'data-modaicom-inline-busy'
 let generation = 0
 const sessionId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `session-${Math.random().toString(36).slice(2)}`
@@ -45,18 +54,111 @@ function owningPost(editor: HTMLElement, urlString = location.href): HTMLElement
   const sole = candidates[0]
   return !isFeedRoute(urlString) && candidates.length === 1 && sole ? (sole.contains(editor) ? sole : undefined) : undefined
 }
-function removeOwnedUi(): void { document.querySelectorAll(`[${OWNED_WRAPPER}]`).forEach((node) => node.remove()); document.querySelectorAll(`[${OWNER_TOKEN}]`).forEach((node) => node.removeAttribute(OWNER_TOKEN)) }
+function removeOwnedUi(): void {
+  document.querySelectorAll(`[${OWNED_WRAPPER}]`).forEach((node) => node.remove())
+  document.querySelectorAll(`[${OWNER_TOKEN}]`).forEach((node) => node.removeAttribute(OWNER_TOKEN))
+  document.querySelectorAll(`[${COMMENT_TOKEN}]`).forEach((node) => node.removeAttribute(COMMENT_TOKEN))
+}
 function sendClearRelay(): void { if (runtimeInvalidated || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return; try { void chrome.runtime.sendMessage({ version: RELAY_VERSION, type: 'CLEAR_RELAY', sessionId }).catch(() => markRuntimeInvalidated()) } catch { markRuntimeInvalidated() } }
 function ownerKey(owner: HTMLElement): string { const existing = ownerKeys.get(owner); if (existing) return existing; const stable = stablePostIdentity(owner); const key = stable?.trim() || `ephemeral-${Math.random().toString(36).slice(2)}`; ownerKeys.set(owner, key); return key }
-function insertTrigger(editor: HTMLElement, owner: HTMLElement, key: string): void {
-  if (Array.from(document.querySelectorAll<HTMLElement>(`[${OWNED_WRAPPER}]`)).some((node) => node.dataset.modaicomOwner === key)) return
-  recordDiagnostic({ stage: isFeedRoute() ? 'feed' : 'individual', event: 'trigger-insertion', insertionAttempted: true })
-  const wrapper = document.createElement('span'); wrapper.dataset.modaicomInlineWrapper = ''; wrapper.dataset.modaicomOwner = key
-  const button = document.createElement('button'); button.type = 'button'; button.textContent = 'modaicom'; button.setAttribute('aria-label', 'modaicom')
-  button.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); if (button.disabled || !owner.isConnected || !isSupportedRoute()) return; button.disabled = true; button.setAttribute(BUSY, ''); const clickGeneration = generation + 1; generation = clickGeneration; owner.setAttribute(OWNER_TOKEN, String(clickGeneration)); recordDiagnostic({ stage: classifyLinkedInRoute(location.href) === 'feed' ? 'feed' : 'individual', event: 'click', routeRecognized: classifyLinkedInRoute(location.href) !== 'unsupported', candidateRootVariant: postRootVariant(owner) ?? 'unknown', snapshotValidationPassed: owner.isConnected, stableIdentifierValidationPassed: Boolean(stablePostIdentity(owner)), exactRootExtractorInvoked: true }); let result: PostExtractionResult; try { result = extractPostContextFromElementInPage(owner, location.href) } catch { result = { kind: 'unexpected-error' } } if (!owner.isConnected || location.href !== lastRoute) result = { kind: 'stale-target' }; owner.removeAttribute(OWNER_TOKEN); button.disabled = false; button.removeAttribute(BUSY); recordDiagnostic({ stage: classifyLinkedInRoute(location.href) === 'feed' ? 'feed' : 'individual', event: 'extraction', extractionOutcome: result.kind, authorFieldFound: result.kind === 'success', authoredBodyFieldFound: result.kind === 'success', normalizationSucceeded: result.kind === 'success' }); if (runtimeInvalidated || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) { markRuntimeInvalidated(); return } try { void chrome.runtime.sendMessage({ version: RELAY_VERSION, type: 'INLINE_EXTRACTION_RESULT', generation: clickGeneration, sessionId, result }).then((response) => recordDiagnostic({ stage: classifyLinkedInRoute(location.href) === 'feed' ? 'feed' : 'individual', event: 'relay', messageAccepted: Boolean(response), relayWriteAccepted: response?.accepted !== false })).catch(() => { markRuntimeInvalidated(); recordDiagnostic({ stage: classifyLinkedInRoute(location.href) === 'feed' ? 'feed' : 'individual', event: 'relay', code: 'RELAY_REJECTED', messageAccepted: false, relayWriteAccepted: false }) }) } catch { markRuntimeInvalidated() } })
-  wrapper.append(button); editor.insertAdjacentElement('afterend', wrapper)
+
+// Resolves one editor to a validated Interaction Target, or nothing. Fails
+// closed on any ambiguity in the ownership chain.
+function resolveTarget(editor: HTMLElement, urlString = location.href): ResolvedTarget | undefined {
+  const kind = classifyComposer(editor)
+  if (!kind) {
+    if (looksLikeReplyComposer(editor)) recordDiagnostic({ stage: 'individual', event: 'comment-reply', code: 'COMMENT_REPLY_REGIME_UNSUPPORTED' })
+    return undefined
+  }
+  if (kind === 'post-comment') {
+    const post = owningPost(editor, urlString)
+    return post ? { kind, postElement: post, key: `post-comment:${ownerKey(post)}` } : undefined
+  }
+  const comment = legacyCommentRoot(editor)
+  if (!comment || !isValidatedCommentRoot(comment)) return undefined
+  const post = commentOwningPost(comment)
+  if (!post || !isValidatedPostRoot(post, false)) {
+    recordDiagnostic({ stage: 'individual', event: 'comment-reply', code: 'AMBIGUOUS_TARGET_COMMENT' })
+    return undefined
+  }
+  const id = commentStableIdentity(comment)
+  if (!id) return undefined
+  return { kind, postElement: post, commentElement: comment, key: `comment-reply:${id}` }
 }
-export function reconcile(urlString = location.href): void { recordDiagnostic({ stage: isFeedRoute(urlString) ? 'feed' : 'individual', event: 'reconcile', routeRecognized: isSupportedRoute(urlString), feedContainerVariant: isFeedRoute(urlString) ? (feedRoot(document) ? feedContainerVariant(feedRoot(document) as Element) : 'none') : undefined }); if (!isSupportedRoute(urlString)) { removeOwnedUi(); return } const seen = new Set<string>(); document.querySelectorAll<HTMLElement>(EDITOR_SELECTOR).forEach((editor) => { if (!isEligibleCommentComposer(editor)) return; const owner = owningPost(editor, urlString); if (!owner) return; const key = ownerKey(owner); if (seen.has(key)) return; seen.add(key); insertTrigger(editor, owner, key) }); document.querySelectorAll<HTMLElement>(`[${OWNED_WRAPPER}]`).forEach((node) => { if (!seen.has(node.dataset.modaicomOwner ?? '')) node.remove() }) }
+
+function insertTrigger(editor: HTMLElement, target: ResolvedTarget): void {
+  const key = target.key
+  if (Array.from(document.querySelectorAll<HTMLElement>(`[${OWNED_WRAPPER}]`)).some((node) => node.dataset.modaicomOwner === key)) return
+  const stage = isFeedRoute() ? 'feed' : 'individual'
+  recordDiagnostic({ stage, event: 'trigger-insertion', insertionAttempted: true })
+  const wrapper = document.createElement('span')
+  wrapper.dataset.modaicomInlineWrapper = ''
+  wrapper.dataset.modaicomOwner = key
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.textContent = 'modaicom'
+  button.setAttribute('aria-label', target.kind === 'comment-reply' ? 'modaicom — draft a reply' : 'modaicom — draft a comment')
+  button.addEventListener('click', (event) => runInlineExtraction(event, button, target))
+  wrapper.append(button)
+  editor.insertAdjacentElement('afterend', wrapper)
+}
+
+function runInlineExtraction(event: Event, button: HTMLButtonElement, target: ResolvedTarget): void {
+  event.preventDefault()
+  event.stopPropagation()
+  const owner = target.postElement
+  if (button.disabled || !owner.isConnected || !isSupportedRoute()) return
+  button.disabled = true
+  button.setAttribute(BUSY, '')
+  const clickGeneration = generation + 1
+  generation = clickGeneration
+  owner.setAttribute(OWNER_TOKEN, String(clickGeneration))
+  if (target.kind === 'comment-reply') target.commentElement.setAttribute(COMMENT_TOKEN, String(clickGeneration))
+  const stage = classifyLinkedInRoute(location.href) === 'feed' ? 'feed' : 'individual'
+  recordDiagnostic({ stage, event: 'click', routeRecognized: classifyLinkedInRoute(location.href) !== 'unsupported', candidateRootVariant: postRootVariant(owner) ?? 'unknown', snapshotValidationPassed: owner.isConnected, stableIdentifierValidationPassed: Boolean(stablePostIdentity(owner)), exactRootExtractorInvoked: true })
+
+  let result: InteractionExtractionResult
+  try {
+    result = extractInteractionContextInPage(
+      target.kind === 'comment-reply'
+        ? { kind: 'comment-reply', postElement: owner, commentElement: target.commentElement }
+        : { kind: 'post-comment', postElement: owner },
+      location.href,
+    )
+  } catch {
+    result = { kind: 'unexpected-error' }
+  }
+  const commentStale = target.kind === 'comment-reply' && !target.commentElement.isConnected
+  if (!owner.isConnected || location.href !== lastRoute) result = { kind: 'stale-target' }
+  else if (commentStale) result = { kind: 'comment-stale-target' }
+  owner.removeAttribute(OWNER_TOKEN)
+  if (target.kind === 'comment-reply') target.commentElement.removeAttribute(COMMENT_TOKEN)
+  button.disabled = false
+  button.removeAttribute(BUSY)
+  recordDiagnostic({ stage, event: 'extraction', extractionOutcome: result.kind, authorFieldFound: result.kind === 'success', authoredBodyFieldFound: result.kind === 'success', normalizationSucceeded: result.kind === 'success' })
+
+  if (runtimeInvalidated || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+    markRuntimeInvalidated()
+    return
+  }
+  try {
+    void chrome.runtime
+      .sendMessage({ version: RELAY_VERSION, type: 'INLINE_EXTRACTION_RESULT', generation: clickGeneration, sessionId, result })
+      .then((response) => recordDiagnostic({ stage, event: 'relay', messageAccepted: Boolean(response), relayWriteAccepted: response?.accepted !== false }))
+      .catch(() => {
+        markRuntimeInvalidated()
+        recordDiagnostic({ stage, event: 'relay', code: 'RELAY_REJECTED', messageAccepted: false, relayWriteAccepted: false })
+      })
+  } catch {
+    markRuntimeInvalidated()
+  }
+}
+function warnOnUnrecognizedFeed(): void {
+  if (feedMarkupRegime(document) !== 'unknown') return
+  recordDiagnostic({ stage: 'feed', event: 'regime', code: 'FEED_REGIME_UNKNOWN', routeRecognized: true })
+  if (import.meta.env.DEV) console.warn('[modaicom] Unrecognized LinkedIn feed markup; the inline trigger is unavailable on this feed until the selectors are updated.')
+}
+export function reconcile(urlString = location.href): void { recordDiagnostic({ stage: isFeedRoute(urlString) ? 'feed' : 'individual', event: 'reconcile', routeRecognized: isSupportedRoute(urlString), feedContainerVariant: isFeedRoute(urlString) ? (feedRoot(document) ? feedContainerVariant(feedRoot(document) as Element) : 'none') : undefined }); if (!isSupportedRoute(urlString)) { removeOwnedUi(); return } if (isFeedRoute(urlString)) warnOnUnrecognizedFeed(); const seen = new Set<string>(); document.querySelectorAll<HTMLElement>(EDITOR_SELECTOR).forEach((editor) => { const target = resolveTarget(editor, urlString); if (!target) return; if (seen.has(target.key)) return; seen.add(target.key); insertTrigger(editor, target) }); document.querySelectorAll<HTMLElement>(`[${OWNED_WRAPPER}]`).forEach((node) => { if (!seen.has(node.dataset.modaicomOwner ?? '')) node.remove() }) }
 export function observationScopes(urlString = location.href): HTMLElement[] { if (!isSupportedRoute(urlString)) return []; const main = document.querySelector<HTMLElement>('main'); const feed = feedRoot(document); const posts = postCandidates(document, urlString); const scopes = isFeedRoute(urlString) ? (feed ? [feed] : main ? [main] : []) : (posts.length ? posts : main ? [main] : []); return Array.from(new Set(scopes)) }
 const BOOTSTRAP_MAX_ATTEMPTS = 50
 const BOOTSTRAP_RETRY_MS = 300
@@ -72,11 +174,14 @@ export function teardownInlineTriggerContentScript(): void { runtimeInvalidated 
 // The popup's on-demand individual-post fallback (Phase 2) asks this content
 // script to run the extractor in the page, rather than the service worker
 // injecting a function whose module scope would be lost across serialization.
-export function handlePagePopupExtractionRequest(message: unknown): PostExtractionResult | undefined {
-  const candidate = message as { version?: unknown; type?: unknown } | null
-  if (!candidate || candidate.version !== RELAY_VERSION || candidate.type !== 'REQUEST_PAGE_EXTRACTION') return undefined
+export function handlePagePopupExtractionRequest(message: unknown): InteractionExtractionResult | undefined {
+  if (!isRequestPageExtractionMessage(message)) return undefined
   if (runtimeInvalidated) return { kind: 'unexpected-error' }
-  try { return extractPostContextInPage(document, location.href) } catch { return { kind: 'unexpected-error' } }
+  try {
+    return postExtractionToInteractionResult(extractPostContextInPage(document, location.href))
+  } catch {
+    return { kind: 'unexpected-error' }
+  }
 }
 if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
