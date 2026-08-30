@@ -74,7 +74,7 @@ describe('Options page', () => {
     render(<Options />)
     await screen.findByText('AI provider (bring your own key)')
     await user.click(screen.getByRole('button', { name: 'Test key' }))
-    expect(sendMessage).toHaveBeenCalledWith({ v: 1, type: 'TEST_PROVIDER' })
+    expect(sendMessage).toHaveBeenCalledWith({ v: 2, type: 'TEST_PROVIDER' })
     expect(await screen.findByRole('alert')).toHaveTextContent('authentication-failed')
   })
 })

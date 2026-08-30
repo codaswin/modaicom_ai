@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { GenerationRequest } from '../features/generation/generationRequest'
+import type { GenerationPreferences } from '../features/generation/preferences'
 import { isGenerationErrorKind, type GenerationErrorKind } from '../features/generation/types'
 import {
   GENERATION_PORT_NAME,
@@ -19,7 +20,7 @@ export type GenerationState =
 
 export type UseGeneration = {
   state: GenerationState
-  generate: (request: GenerationRequest) => void
+  generate: (request: GenerationRequest, preferences: GenerationPreferences) => void
   cancel: () => void
   reset: () => void
 }
@@ -43,7 +44,7 @@ export function useGeneration(): UseGeneration {
   useEffect(() => teardown, [teardown])
 
   const generate = useCallback(
-    (request: GenerationRequest) => {
+    (request: GenerationRequest, preferences: GenerationPreferences) => {
       teardown()
       setState({ phase: 'generating' })
       const port = chrome.runtime.connect({ name: GENERATION_PORT_NAME })
@@ -66,7 +67,7 @@ export function useGeneration(): UseGeneration {
         setState((current) => (current.phase === 'generating' ? { phase: 'error', kind: 'network-error' } : current))
       })
 
-      port.postMessage({ v: GENERATION_PROTOCOL_VERSION, type: 'REQUEST_GENERATION', request })
+      port.postMessage({ v: GENERATION_PROTOCOL_VERSION, type: 'REQUEST_GENERATION', request, preferences })
 
       timerRef.current = window.setTimeout(() => {
         teardown()

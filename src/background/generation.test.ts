@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { DEFAULT_GENERATION_PREFERENCES } from '../features/generation/preferences'
 import { handleOneShotForTest, isExtensionPage, runGenerationForTest } from './generation'
 
 const store = new Map<string, unknown>()
@@ -30,8 +31,13 @@ function setupChrome() {
 const REQUEST = { interactionKind: 'post-comment' as const, postText: 'A LinkedIn post.' }
 const OK_BODY = { choices: [{ message: { content: 'A drafted reply.' } }] }
 
-function run(request: unknown = REQUEST) {
-  return runGenerationForTest(request, new AbortController().signal)
+function run(request: unknown = REQUEST, preferences: unknown = DEFAULT_GENERATION_PREFERENCES) {
+  return runGenerationForTest(request, preferences, new AbortController().signal)
+}
+
+// Explicit preferences arg with no default — for the invalid/absent cases.
+function runWithPrefs(preferences: unknown) {
+  return runGenerationForTest(REQUEST, preferences, new AbortController().signal)
 }
 
 beforeEach(setupChrome)
@@ -76,6 +82,19 @@ describe('service-worker generation orchestrator — preflight', () => {
       error: { kind: 'invalid-response' },
     })
   })
+
+  it.each([
+    ['missing', undefined],
+    ['unknown id', { tone: 'sarcastic', intent: 'disagree', length: 'long' }],
+    ['extra key', { tone: 'friendly', intent: 'disagree', length: 'long', style: 'x' }],
+    ['not an object', 'friendly'],
+  ])('invalid-preferences (no fetch) when preferences are %s', async (_label, preferences) => {
+    store.set('modaicom.provider.config', { providerId: 'openai', model: 'gpt-4o-mini' })
+    store.set('modaicom.provider.openai.apiKey', 'sk-live-abc')
+    store.set('modaicom.provider.consent', { providerId: 'openai', consentedAt: Date.now() })
+    await expect(runWithPrefs(preferences)).resolves.toEqual({ ok: false, error: { kind: 'invalid-preferences' } })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })
 
 describe('service-worker generation orchestrator — happy path', () => {
@@ -101,6 +120,46 @@ describe('service-worker generation orchestrator — happy path', () => {
   it('surfaces provider errors as typed kinds', async () => {
     fetchMock.mockResolvedValue(new Response('{}', { status: 401 }))
     await expect(run()).resolves.toEqual({ ok: false, error: { kind: 'authentication-failed' } })
+  })
+
+  it('the outbound system prompt reflects the selected tone / intent / length', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify(OK_BODY), { status: 200, headers: { 'content-type': 'application/json' } }),
+    )
+    await run(REQUEST, { tone: 'confident', intent: 'disagree', length: 'short' })
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const system = JSON.parse(init.body as string).messages[0].content as string
+    expect(system.toLowerCase()).toContain('push back')
+    expect(system.toLowerCase()).toContain('clear stance')
+    expect(system).toContain('1–2 sentences')
+    expect(system).not.toContain('2 to 4 sentences')
+  })
+
+  it('a different length changes the outbound system prompt', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify(OK_BODY), { status: 200, headers: { 'content-type': 'application/json' } }),
+    )
+    await run(REQUEST, { tone: 'confident', intent: 'disagree', length: 'long' })
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const system = JSON.parse(init.body as string).messages[0].content as string
+    expect(system).toContain('5–7 sentences')
+    expect(system).not.toContain('1–2 sentences')
+  })
+
+  it('never writes preferences to the console', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify(OK_BODY), { status: 200, headers: { 'content-type': 'application/json' } }),
+    )
+    await run(REQUEST, { tone: 'confident', intent: 'disagree', length: 'short' })
+    for (const spy of [warn, log]) {
+      for (const call of spy.mock.calls) {
+        expect(JSON.stringify(call)).not.toMatch(/confident|disagree/)
+      }
+    }
+    warn.mockRestore()
+    log.mockRestore()
   })
 })
 
@@ -137,7 +196,7 @@ describe('one-shot sender authorisation', () => {
       runtime: { id: 'ext' },
       storage: { local: { get: vi.fn(async () => ({})) } },
     })
-    const reply = await handleOneShotForTest({ v: 1, type: 'GET_PROVIDER_STATUS' }, {
+    const reply = await handleOneShotForTest({ v: 2, type: 'GET_PROVIDER_STATUS' }, {
       id: 'ext',
       origin: 'chrome-extension://ext',
     } as chrome.runtime.MessageSender)
@@ -146,7 +205,7 @@ describe('one-shot sender authorisation', () => {
 
   it('GET_PROVIDER_STATUS from a content script is ignored', async () => {
     vi.stubGlobal('chrome', { runtime: { id: 'ext' } })
-    const reply = await handleOneShotForTest({ v: 1, type: 'GET_PROVIDER_STATUS' }, {
+    const reply = await handleOneShotForTest({ v: 2, type: 'GET_PROVIDER_STATUS' }, {
       id: 'ext',
       origin: 'https://www.linkedin.com',
       url: 'https://www.linkedin.com/feed/',

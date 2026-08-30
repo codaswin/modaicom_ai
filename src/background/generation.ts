@@ -1,5 +1,6 @@
 import { runGeneration } from '../features/generation/generate'
 import { isGenerationRequest } from '../features/generation/generationRequest'
+import { DEFAULT_GENERATION_PREFERENCES, isGenerationPreferences } from '../features/generation/preferences'
 import { KNOWN_PROVIDER_IDS } from '../features/generation/providers/registry'
 import type { GenerationError, GenerationResult } from '../features/generation/types'
 import {
@@ -68,11 +69,15 @@ function composeAbortSignal(controller: AbortController): AbortSignal {
   return typeof AbortSignal.any === 'function' ? AbortSignal.any([controller.signal, timeout]) : timeout
 }
 
-async function generate(request: unknown, signal: AbortSignal): Promise<GenerationResult> {
+async function generate(request: unknown, preferences: unknown, signal: AbortSignal): Promise<GenerationResult> {
   if (!isGenerationRequest(request)) return errorResult('invalid-response')
+  // The message boundary rejects an unknown/malformed selection with a typed
+  // error (ADR-0010) — never a silent default. The popup always sends a valid
+  // triple, so this fires only on a bug or a version skew.
+  if (!isGenerationPreferences(preferences)) return errorResult('invalid-preferences')
   const pf = await preflight()
   if ('ok' in pf) return pf
-  return runGeneration(request, { ...pf, signal })
+  return runGeneration(request, preferences, { ...pf, signal })
 }
 
 function handlePort(port: chrome.runtime.Port): void {
@@ -88,6 +93,9 @@ function handlePort(port: chrome.runtime.Port): void {
   const controller = new AbortController()
   const session = { port, controller }
   active = session
+  // One request per port: the popup opens a fresh port per Generate/Regenerate.
+  // A second REQUEST_GENERATION on the same port is ignored.
+  let requested = false
 
   const finish = () => {
     if (active === session) active = undefined
@@ -104,7 +112,9 @@ function handlePort(port: chrome.runtime.Port): void {
       controller.abort('cancelled')
       return
     }
-    void generate(message.request, composeAbortSignal(controller))
+    if (requested) return
+    requested = true
+    void generate(message.request, message.preferences, composeAbortSignal(controller))
       .then((result) => {
         try {
           port.postMessage(resultMessage(result))
@@ -123,9 +133,14 @@ async function handleOneShot(message: unknown, sender: chrome.runtime.MessageSen
     await writeTransmissionConsent(message.providerId)
     return { ok: true }
   }
-  // TEST_PROVIDER: a minimal generation with no LinkedIn content.
+  // TEST_PROVIDER: a minimal generation with no LinkedIn content and the
+  // default preference triple.
   try {
-    const result = await generate({ interactionKind: 'post-comment', postText: 'ping' }, composeAbortSignal(new AbortController()))
+    const result = await generate(
+      { interactionKind: 'post-comment', postText: 'ping' },
+      DEFAULT_GENERATION_PREFERENCES,
+      composeAbortSignal(new AbortController()),
+    )
     return result.ok ? { ok: true } : { ok: false, error: result.error }
   } catch {
     return { ok: false, error: { kind: 'provider-error' } }

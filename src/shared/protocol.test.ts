@@ -33,8 +33,12 @@ describe('isRequestPageExtractionMessage', () => {
 
 describe('generation protocol guards', () => {
   it('accepts the Port inbound messages', () => {
-    expect(isGenerationPortMessage({ v: V, type: 'REQUEST_GENERATION', request: {} })).toBe(true)
+    expect(isGenerationPortMessage({ v: V, type: 'REQUEST_GENERATION', request: {}, preferences: {} })).toBe(true)
     expect(isGenerationPortMessage({ v: V, type: 'CANCEL_GENERATION' })).toBe(true)
+  })
+
+  it('is the v2 protocol', () => {
+    expect(GENERATION_PROTOCOL_VERSION).toBe(2)
   })
 
   it('accepts the one-shot messages', () => {
@@ -49,8 +53,9 @@ describe('generation protocol guards', () => {
   })
 
   it.each([
-    { v: 2, type: 'REQUEST_GENERATION', request: {} },
-    { v: V, type: 'REQUEST_GENERATION' },
+    { v: 1, type: 'REQUEST_GENERATION', request: {}, preferences: {} },
+    { v: V, type: 'REQUEST_GENERATION', request: {} },
+    { v: V, type: 'REQUEST_GENERATION', preferences: {} },
     { v: V, type: 'GET_LATEST_RELAY' },
     { v: V, type: 'RECORD_TRANSMISSION_CONSENT' },
     { type: 'CANCEL_GENERATION' },

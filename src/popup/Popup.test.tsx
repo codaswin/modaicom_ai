@@ -220,17 +220,19 @@ describe('Popup', () => {
 
     render(<Popup />)
     await screen.findByText('The comment body.')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: 'Generate reply' }))
 
     expect(connect).toHaveBeenCalledWith({ name: 'modaicom.generation' })
-    const sent = port.postMessage.mock.calls[0]![0] as { type: string; request: unknown }
+    const sent = port.postMessage.mock.calls[0]![0] as { type: string; request: unknown; preferences: unknown }
     expect(sent.type).toBe('REQUEST_GENERATION')
     expect(sent.request).toEqual({ interactionKind: 'comment-reply', postText: 'The post body.', commentText: 'The comment body.' })
+    expect(sent.preferences).toEqual({ tone: 'professional', intent: 'add-insight', length: 'medium' })
     expect(JSON.stringify(sent)).not.toContain('Ada Lovelace')
     expect(JSON.stringify(sent)).not.toContain('Grace Hopper')
 
     expect(screen.getByText('Drafting…')).toBeInTheDocument()
-    port.emit({ v: 1, type: 'GENERATION_RESULT', ok: true, text: 'Here is a drafted reply.' })
+    port.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Here is a drafted reply.' })
     expect(await screen.findByDisplayValue('Here is a drafted reply.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument()
@@ -248,8 +250,9 @@ describe('Popup', () => {
 
     render(<Popup />)
     await screen.findByText('A useful post.')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: 'Generate reply' }))
-    port.emit({ v: 1, type: 'GENERATION_RESULT', ok: false, error: { kind: 'rate-limited' } })
+    port.emit({ v: 2, type: 'GENERATION_RESULT', ok: false, error: { kind: 'rate-limited' } })
 
     expect(await screen.findByText(/rate-limiting requests/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
@@ -339,6 +342,44 @@ describe('Popup', () => {
       })
       expect(screen.getByRole('combobox', { name: 'Intent' })).toHaveValue('add-insight')
       expect(screen.getByRole('combobox', { name: 'Length' })).toHaveValue('medium')
+    })
+
+    it('holds Generate disabled until preferences have hydrated, then sends the stored triple', async () => {
+      let resolveGet!: (value: unknown) => void
+      storageGet.mockReturnValue(new Promise((res) => { resolveGet = res }))
+      const port = makeFakePort()
+      connect.mockReturnValue(port)
+      const user = userEvent.setup()
+      await renderReady()
+
+      expect(screen.getByRole('button', { name: 'Generate reply' })).toBeDisabled()
+
+      resolveGet({ 'modaicom.generation.preferences': { tone: 'friendly', intent: 'support', length: 'short' } })
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
+      await user.click(screen.getByRole('button', { name: 'Generate reply' }))
+
+      const sent = port.postMessage.mock.calls[0]![0] as { preferences: unknown }
+      expect(sent.preferences).toEqual({ tone: 'friendly', intent: 'support', length: 'short' })
+    })
+
+    it('Regenerate after a control change sends the new triple on a new port', async () => {
+      const firstPort = makeFakePort()
+      const secondPort = makeFakePort()
+      connect.mockReturnValueOnce(firstPort).mockReturnValueOnce(secondPort)
+      const user = userEvent.setup()
+      await renderReady()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
+
+      await user.click(screen.getByRole('button', { name: 'Generate reply' }))
+      firstPort.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Draft one.' })
+      await screen.findByDisplayValue('Draft one.')
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Length' }), 'long')
+      await user.click(screen.getByRole('button', { name: 'Regenerate' }))
+
+      expect(connect).toHaveBeenCalledTimes(2)
+      const sent = secondPort.postMessage.mock.calls[0]![0] as { preferences: { length: string } }
+      expect(sent.preferences.length).toBe('long')
     })
   })
 })

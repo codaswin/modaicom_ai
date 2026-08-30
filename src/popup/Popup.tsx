@@ -26,6 +26,7 @@ const generationErrorMessages = {
   'provider-not-configured': 'modaicom is not set up to reach an AI provider. Open settings.',
   'api-key-missing': 'No API key is configured. Open settings.',
   'transmission-not-consented': 'You have not yet consented to send LinkedIn text to your provider. Open settings.',
+  'invalid-preferences': 'Your response controls could not be read. Reopen modaicom and Retry.',
   'authentication-failed': 'Your API key was rejected. Check it in settings.',
   'rate-limited': 'Your provider is rate-limiting requests. Wait a moment and Retry.',
   'request-timeout': 'The generation timed out. Retry.',
@@ -139,16 +140,26 @@ function DraftView({ text, onRegenerate }: { text: string; onRegenerate: () => v
   )
 }
 
-type UsePreferences = { prefs: GenerationPreferences; update: (next: GenerationPreferences) => void }
+type UsePreferences = {
+  prefs: GenerationPreferences
+  // false until the stored value has loaded (or the user has changed a control).
+  // Generation is gated on this so an early click never sends the default over a
+  // stored non-default choice (ADR-0010).
+  ready: boolean
+  update: (next: GenerationPreferences) => void
+}
 
 function usePreferences(): UsePreferences {
   const [prefs, setPrefs] = useState<GenerationPreferences>(DEFAULT_GENERATION_PREFERENCES)
+  const [ready, setReady] = useState(false)
   // A user change before the stored value loads must win over the late load.
   const touched = useRef(false)
   useEffect(() => {
     let cancelled = false
     void readPreferences().then((loaded) => {
-      if (!cancelled && !touched.current) setPrefs(loaded)
+      if (cancelled) return
+      if (!touched.current) setPrefs(loaded)
+      setReady(true)
     })
     return () => {
       cancelled = true
@@ -157,9 +168,10 @@ function usePreferences(): UsePreferences {
   const update = useCallback((next: GenerationPreferences) => {
     touched.current = true
     setPrefs(next)
+    setReady(true)
     void writePreferences(next)
   }, [])
-  return { prefs, update }
+  return { prefs, ready, update }
 }
 
 const LENGTH_CAPTION_ID = 'modaicom-length-caption'
@@ -197,7 +209,7 @@ function ControlSelect<Id extends string>({
   )
 }
 
-function ResponseControls({ prefs, update }: UsePreferences) {
+function ResponseControls({ prefs, update }: Pick<UsePreferences, 'prefs' | 'update'>) {
   return (
     <fieldset className="controls">
       <legend className="controls__legend">Response controls</legend>
@@ -235,7 +247,10 @@ function GenerationPanel({ context, status, gen }: { context: LinkedInInteractio
   const preferences = usePreferences()
   const ready = Boolean(status?.configured && status?.consented)
   const request = contextToGenerationRequest(context)
-  const run = () => gen.generate(request)
+  // Only ever generates with the current, hydrated selection (ADR-0010).
+  const run = () => {
+    if (preferences.ready) gen.generate(request, preferences.prefs)
+  }
 
   if (!ready) {
     return (
@@ -250,7 +265,9 @@ function GenerationPanel({ context, status, gen }: { context: LinkedInInteractio
   return (
     <div className="generation">
       <ResponseControls prefs={preferences.prefs} update={preferences.update} />
-      {state.phase === 'idle' && <button className="generation__go" onClick={run}>Generate reply</button>}
+      {state.phase === 'idle' && (
+        <button className="generation__go" onClick={run} disabled={!preferences.ready}>Generate reply</button>
+      )}
       {state.phase === 'generating' && (
         <><p className="generation__hint" role="status">Drafting…</p><button className="retry-button" onClick={gen.cancel}>Stop</button></>
       )}

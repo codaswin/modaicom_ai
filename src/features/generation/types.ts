@@ -5,6 +5,7 @@ export type GenerationErrorKind =
   | 'provider-not-configured'
   | 'api-key-missing'
   | 'transmission-not-consented'
+  | 'invalid-preferences'
   | 'authentication-failed'
   | 'rate-limited'
   | 'request-timeout'
@@ -37,6 +38,7 @@ export const GENERATION_ERROR_KINDS: readonly GenerationErrorKind[] = [
   'provider-not-configured',
   'api-key-missing',
   'transmission-not-consented',
+  'invalid-preferences',
   'authentication-failed',
   'rate-limited',
   'request-timeout',
@@ -52,6 +54,10 @@ const RETRYABLE = new Set<GenerationErrorKind>([
   'network-error',
   'provider-error',
   'invalid-response',
+  // The popup's stored preferences are always a valid typed triple (validated on
+  // read, with a default fallback), so this only occurs on transient protocol
+  // skew during an extension update — where retrying after the reload works.
+  'invalid-preferences',
 ])
 
 export function isRetryableGenerationError(kind: GenerationErrorKind): boolean {
