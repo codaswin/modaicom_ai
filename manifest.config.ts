@@ -5,7 +5,7 @@ export default defineManifest({
   name: 'modaicom',
   version: '0.1.0',
   description: 'AI-assisted LinkedIn responses with the user in control.',
-  permissions: ['activeTab', 'scripting', 'storage'],
+  permissions: ['activeTab', 'storage'],
   host_permissions: ['https://linkedin.com/*', 'https://www.linkedin.com/*'],
   background: { service_worker: 'src/background/serviceWorker.ts', type: 'module' },
   content_scripts: [

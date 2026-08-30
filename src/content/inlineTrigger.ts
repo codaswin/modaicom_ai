@@ -1,4 +1,4 @@
-import { extractPostContextFromElementInPage, type PostExtractionResult } from '../features/linkedin-context/extractPostContext'
+import { extractPostContextFromElementInPage, extractPostContextInPage, type PostExtractionResult } from '../features/linkedin-context/extractPostContext'
 import { classifyLinkedInRoute } from '../features/linkedin-context/routes'
 import { FEED_CONTAINER_SELECTOR, FEED_POST_ROOT_SELECTOR, POST_ROOT_SELECTOR, isValidatedPostRoot, stablePostIdentity, postRootVariant, feedContainerVariant } from '../features/linkedin-context/postAdapter'
 import { RELAY_VERSION } from '../shared/relay'
@@ -58,12 +58,33 @@ function insertTrigger(editor: HTMLElement, owner: HTMLElement, key: string): vo
 }
 export function reconcile(urlString = location.href): void { recordDiagnostic({ stage: isFeedRoute(urlString) ? 'feed' : 'individual', event: 'reconcile', routeRecognized: isSupportedRoute(urlString), feedContainerVariant: isFeedRoute(urlString) ? (feedRoot(document) ? feedContainerVariant(feedRoot(document) as Element) : 'none') : undefined }); if (!isSupportedRoute(urlString)) { removeOwnedUi(); return } const seen = new Set<string>(); document.querySelectorAll<HTMLElement>(EDITOR_SELECTOR).forEach((editor) => { if (!isEligibleCommentComposer(editor)) return; const owner = owningPost(editor, urlString); if (!owner) return; const key = ownerKey(owner); if (seen.has(key)) return; seen.add(key); insertTrigger(editor, owner, key) }); document.querySelectorAll<HTMLElement>(`[${OWNED_WRAPPER}]`).forEach((node) => { if (!seen.has(node.dataset.modaicomOwner ?? '')) node.remove() }) }
 export function observationScopes(urlString = location.href): HTMLElement[] { if (!isSupportedRoute(urlString)) return []; const main = document.querySelector<HTMLElement>('main'); const feed = feedRoot(document); const posts = postCandidates(document, urlString); const scopes = isFeedRoute(urlString) ? (feed ? [feed] : main ? [main] : []) : (posts.length ? posts : main ? [main] : []); return Array.from(new Set(scopes)) }
+const BOOTSTRAP_MAX_ATTEMPTS = 50
+const BOOTSTRAP_RETRY_MS = 300
 function cancelBootstrapRetry(): void { if (bootstrapRetryTimer !== undefined) { window.clearTimeout(bootstrapRetryTimer); bootstrapRetryTimer = undefined } bootstrapRetryAttempts = 0 }
-function scheduleBootstrapRetry(): void { if (runtimeInvalidated || bootstrapRetryTimer !== undefined || bootstrapRetryAttempts >= 5 || !isSupportedRoute()) return; bootstrapRetryTimer = window.setTimeout(() => { bootstrapRetryTimer = undefined; bootstrapRetryAttempts += 1; configureObserver(); if (observationScopes().length === 0 && bootstrapRetryAttempts < 5) scheduleBootstrapRetry() }, 200) }
+function scheduleBootstrapRetry(): void { if (runtimeInvalidated || bootstrapRetryTimer !== undefined || bootstrapRetryAttempts >= BOOTSTRAP_MAX_ATTEMPTS || !isSupportedRoute()) return; bootstrapRetryTimer = window.setTimeout(() => { bootstrapRetryTimer = undefined; bootstrapRetryAttempts += 1; configureObserver(); if (observationScopes().length === 0 && bootstrapRetryAttempts < BOOTSTRAP_MAX_ATTEMPTS) scheduleBootstrapRetry() }, BOOTSTRAP_RETRY_MS) }
 function configureObserver(): void { if (runtimeInvalidated) return; observer?.disconnect(); observer = undefined; if (!isSupportedRoute()) { cancelBootstrapRetry(); return }; const scopes = observationScopes(); if (scopes.length === 0) { scheduleBootstrapRetry(); return }; cancelBootstrapRetry(); observer = new MutationObserver(scheduleReconcile); scopes.forEach((scope) => observer?.observe(scope, { childList: true, subtree: true })) }
-function scheduleReconcile(): void { if (runtimeInvalidated || reconcileTimer !== undefined) window.clearTimeout(reconcileTimer); reconcileTimer = window.setTimeout(() => { reconcileTimer = undefined; if (location.href !== lastRoute) { lastRoute = location.href; cancelBootstrapRetry(); removeOwnedUi(); sendClearRelay() } reconcile(); configureObserver() }, 50) }
+function scheduleReconcile(): void { if (runtimeInvalidated) return; if (reconcileTimer !== undefined) window.clearTimeout(reconcileTimer); reconcileTimer = window.setTimeout(() => { reconcileTimer = undefined; if (location.href !== lastRoute) { lastRoute = location.href; cancelBootstrapRetry(); removeOwnedUi(); sendClearRelay() } reconcile(); configureObserver() }, 50) }
 function installHistoryHooks(): void { (['pushState', 'replaceState'] as const).forEach((method) => { if (originalHistory[method]) return; const original = history[method]; originalHistory[method] = original; history[method] = function (...args: Parameters<History[typeof method]>) { const result = original.apply(this, args); window.dispatchEvent(new Event('modaicom-route-change')); return result } }); window.addEventListener('popstate', scheduleReconcile); window.addEventListener('modaicom-route-change', scheduleReconcile) }
 function restoreHistoryHooks(): void { (['pushState', 'replaceState'] as const).forEach((method) => { const original = originalHistory[method]; if (original) history[method] = original; delete originalHistory[method] }); window.removeEventListener('popstate', scheduleReconcile); window.removeEventListener('modaicom-route-change', scheduleReconcile) }
 export function initializeInlineTriggerContentScript(): void { if (initialized || runtimeInvalidated) return; initialized = true; lastRoute = location.href; installHistoryHooks(); sendClearRelay(); reconcile(); configureObserver() }
 export function teardownInlineTriggerContentScript(): void { runtimeInvalidated = false; observer?.disconnect(); observer = undefined; cancelBootstrapRetry(); if (reconcileTimer !== undefined) { window.clearTimeout(reconcileTimer); reconcileTimer = undefined }; removeOwnedUi(); restoreHistoryHooks(); initialized = false }
+
+// The popup's on-demand individual-post fallback (Phase 2) asks this content
+// script to run the extractor in the page, rather than the service worker
+// injecting a function whose module scope would be lost across serialization.
+export function handlePagePopupExtractionRequest(message: unknown): PostExtractionResult | undefined {
+  const candidate = message as { version?: unknown; type?: unknown } | null
+  if (!candidate || candidate.version !== RELAY_VERSION || candidate.type !== 'REQUEST_PAGE_EXTRACTION') return undefined
+  if (runtimeInvalidated) return { kind: 'unexpected-error' }
+  try { return extractPostContextInPage(document, location.href) } catch { return { kind: 'unexpected-error' } }
+}
+if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+    if (sender.id && chrome.runtime?.id && sender.id !== chrome.runtime.id) return false
+    const result = handlePagePopupExtractionRequest(message)
+    if (result === undefined) return false
+    sendResponse(result)
+    return true
+  })
+}
 if (typeof document !== 'undefined') initializeInlineTriggerContentScript()

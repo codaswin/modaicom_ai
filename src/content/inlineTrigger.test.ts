@@ -140,6 +140,66 @@ describe('inline trigger content boundary', () => {
     initializeInlineTriggerContentScript()
   })
 
+  it('targets the server-driven-UI home feed markup that has no activity URN', () => {
+    const main = document.createElement('main')
+    const feed = document.createElement('div')
+    feed.setAttribute('data-testid', 'mainFeed')
+    feed.setAttribute('role', 'list')
+
+    const chrome = document.createElement('div')
+    chrome.setAttribute('role', 'listitem') // feed sort toggle: a list item with no post body
+    feed.append(chrome)
+
+    const makePost = (key: string, text: string, withComposer: boolean) => {
+      const wrapper = document.createElement('div')
+      wrapper.setAttribute('componentkey', key)
+      const post = document.createElement('div')
+      post.setAttribute('role', 'listitem')
+      const avatar = document.createElement('img')
+      avatar.setAttribute('alt', `View ${text} author's profile`)
+      const body = document.createElement('div')
+      body.setAttribute('data-testid', 'expandable-text-box')
+      body.textContent = text
+      post.append(avatar, body)
+      if (withComposer) {
+        const editor = document.createElement('div')
+        editor.setAttribute('contenteditable', 'true')
+        editor.setAttribute('role', 'textbox')
+        editor.setAttribute('aria-label', 'Text editor for creating comment')
+        editor.className = 'tiptap'
+        post.append(editor)
+      }
+      wrapper.append(post)
+      feed.append(wrapper)
+      return post
+    }
+
+    const first = makePost('expanded-a_MAIN_FEED', 'Alpha', true)
+    const second = makePost('expanded-b_MAIN_FEED', 'Beta', false)
+    main.append(feed)
+    document.body.append(main)
+
+    expect(postCandidates(document, 'https://www.linkedin.com/feed/')).toEqual([first, second])
+    const editor = first.querySelector<HTMLElement>('[contenteditable="true"]')!
+    expect(composerIsEligible(editor)).toBe(true)
+
+    reconcile('https://www.linkedin.com/feed/')
+    expect(document.querySelectorAll('[data-modaicom-inline-wrapper]').length).toBe(1)
+    expect(first.querySelector('[data-modaicom-inline-wrapper]')).not.toBeNull()
+
+    // A reply editor carries the same accessible label; only the first comment
+    // composer in the post owns the trigger.
+    const reply = document.createElement('div')
+    reply.setAttribute('contenteditable', 'true')
+    reply.setAttribute('role', 'textbox')
+    reply.setAttribute('aria-label', 'Text editor for creating comment')
+    reply.className = 'tiptap'
+    first.append(reply)
+    expect(composerIsEligible(reply)).toBe(false)
+
+    main.remove()
+  })
+
   it('excludes unrelated activity cards and observes only the feed container', () => {
     const main = document.createElement('main')
     const feed = document.createElement('div')
