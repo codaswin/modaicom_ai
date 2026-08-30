@@ -15,7 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "vite build",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+    "check": "npm run lint && npm run typecheck && npm run build && npm test"
   },
   "dependencies": {
     "react": "^19.2.8",

@@ -4,9 +4,36 @@ import { detectCurrentPage, type DetectionResult } from '../features/linkedin-de
 import { requestPageInteractionContext } from '../features/linkedin-context/extractInteractionContext'
 import { isInteractionExtractionResult, type InteractionExtractionResult, type LinkedInInteractionContext } from '../features/linkedin-context/interactionContext'
 import type { ExtractedPostContext } from '../features/linkedin-context/extractPostContext'
+import { contextToGenerationRequest } from '../features/generation/generationRequest'
+import { isRetryableGenerationError, type GenerationErrorKind } from '../features/generation/types'
 import { isSupportedFeedUrl } from '../features/linkedin-context/routes'
+import { GENERATION_PROTOCOL_VERSION } from '../shared/protocol'
 import { RELAY_VERSION } from '../shared/relay'
+import { useGeneration, type UseGeneration } from './useGeneration'
 import './popup.css'
+
+type ProviderStatus = { configured: boolean; providerId?: string; model?: string; consented: boolean }
+
+const generationErrorMessages = {
+  'provider-not-configured': 'modaicom is not set up to reach an AI provider. Open settings.',
+  'api-key-missing': 'No API key is configured. Open settings.',
+  'transmission-not-consented': 'You have not yet consented to send LinkedIn text to your provider. Open settings.',
+  'authentication-failed': 'Your API key was rejected. Check it in settings.',
+  'rate-limited': 'Your provider is rate-limiting requests. Wait a moment and Retry.',
+  'request-timeout': 'The generation timed out. Retry.',
+  'network-error': 'Could not reach your provider. Check your connection and Retry.',
+  'provider-error': 'Your provider returned an error. Retry.',
+  'invalid-response': 'The provider’s response was empty or unreadable. Retry.',
+  'generation-cancelled': 'Generation cancelled.',
+} satisfies Record<GenerationErrorKind, string>
+
+function openOptions() {
+  try {
+    chrome.runtime.openOptionsPage()
+  } catch {
+    // options page not available in tests
+  }
+}
 
 type PopupState = DetectionResult['kind'] | 'loading'
 type ContextState = InteractionExtractionResult | { kind: 'context-loading' }
@@ -88,10 +115,63 @@ function InteractionView({ context }: { context: LinkedInInteractionContext }) {
   )
 }
 
+function DraftView({ text, onRegenerate }: { text: string; onRegenerate: () => void }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="draft">
+      <label className="draft__label" htmlFor="modaicom-draft">Suggested draft</label>
+      <textarea id="modaicom-draft" className="draft__text" readOnly value={text} rows={6} />
+      <div className="draft__actions">
+        <button className="retry-button" onClick={() => { void navigator.clipboard?.writeText(text).then(() => setCopied(true)) }}>
+          {copied ? 'Copied ✓' : 'Copy'}
+        </button>
+        <button className="retry-button" onClick={onRegenerate}>Regenerate</button>
+      </div>
+    </div>
+  )
+}
+
+function GenerationPanel({ context, status, gen }: { context: LinkedInInteractionContext; status: ProviderStatus | null; gen: UseGeneration }) {
+  const ready = Boolean(status?.configured && status?.consented)
+  const request = contextToGenerationRequest(context)
+  const run = () => gen.generate(request)
+
+  if (!ready) {
+    return (
+      <div className="generation">
+        <p className="generation__hint">Set up modaicom to draft replies.</p>
+        <button className="retry-button" onClick={openOptions}>Open settings</button>
+      </div>
+    )
+  }
+
+  const { state } = gen
+  return (
+    <div className="generation">
+      {state.phase === 'idle' && <button className="generation__go" onClick={run}>Generate reply</button>}
+      {state.phase === 'generating' && (
+        <><p className="generation__hint" role="status">Drafting…</p><button className="retry-button" onClick={gen.cancel}>Stop</button></>
+      )}
+      {state.phase === 'done' && <DraftView text={state.text} onRegenerate={run} />}
+      {state.phase === 'error' && (
+        <>
+          <p className="generation__error">{generationErrorMessages[state.kind]}</p>
+          {isRetryableGenerationError(state.kind)
+            ? <button className="retry-button" onClick={run}>Retry</button>
+            : <button className="retry-button" onClick={openOptions}>Open settings</button>}
+        </>
+      )}
+    </div>
+  )
+}
+
 export function Popup() {
   const [result, setResult] = useState<DetectionResult | null>(null)
   const [contextResult, setContextResult] = useState<ContextState | null>(null)
   const [isFeed, setIsFeed] = useState(false)
+  const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null)
+  const gen = useGeneration()
+  const { reset: resetGeneration } = gen
 
   const readActiveUrl = async () => {
     try {
@@ -115,6 +195,17 @@ export function Popup() {
     setResult(null)
     setContextResult(null)
     setIsFeed(false)
+    resetGeneration()
+    try {
+      const status: unknown = await chrome.runtime.sendMessage({ v: GENERATION_PROTOCOL_VERSION, type: 'GET_PROVIDER_STATUS' })
+      setProviderStatus(
+        status && typeof status === 'object' && typeof (status as ProviderStatus).configured === 'boolean'
+          ? (status as ProviderStatus)
+          : { configured: false, consented: false },
+      )
+    } catch {
+      setProviderStatus({ configured: false, consented: false })
+    }
     const detection = await detectCurrentPage()
     setResult(detection)
     if (detection.kind !== 'linkedin') return
@@ -130,7 +221,7 @@ export function Popup() {
     } else {
       setContextResult(await requestPageInteractionContext())
     }
-  }, [])
+  }, [resetGeneration])
 
   useEffect(() => { void Promise.resolve().then(load) }, [load])
 
@@ -149,7 +240,10 @@ export function Popup() {
       {presentation.canRetry ? <ActionButton label="Retry" onClick={load} /> : null}
       {context ? <section className="context-panel" aria-label="LinkedIn context">
         {context.kind === 'context-loading' ? <p className="context-panel__message">Reading LinkedIn context…</p> :
-          context.kind === 'success' ? <InteractionView context={context.context} /> :
+          context.kind === 'success' ? <>
+            <InteractionView context={context.context} />
+            <GenerationPanel context={context.context} status={providerStatus} gen={gen} />
+          </> :
           <><p className="context-panel__message">{showNeutralFeed ? 'Select a LinkedIn post to continue.' : contextMessages[context.kind]}</p>{canRetryContext ? <ActionButton label="Retry" onClick={load} /> : null}</>}
       </section> : null}
     </main>

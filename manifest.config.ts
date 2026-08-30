@@ -7,6 +7,10 @@ export default defineManifest({
   description: 'AI-assisted LinkedIn responses with the user in control.',
   permissions: ['activeTab', 'storage'],
   host_permissions: ['https://linkedin.com/*', 'https://www.linkedin.com/*'],
+  // Requested at runtime from the options page when a provider is configured
+  // (ADR-0008). Users who never use AI hold zero provider access.
+  optional_host_permissions: ['https://api.openai.com/*'],
+  options_ui: { page: 'src/options/index.html', open_in_tab: true },
   background: { service_worker: 'src/background/serviceWorker.ts', type: 'module' },
   content_scripts: [
     {

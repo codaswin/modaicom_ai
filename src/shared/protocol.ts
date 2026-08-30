@@ -26,3 +26,62 @@ export function isRequestPageExtractionMessage(value: unknown): value is Request
   const candidate = value as Record<string, unknown>
   return candidate.version === RELAY_VERSION && candidate.type === 'REQUEST_PAGE_EXTRACTION'
 }
+
+// ---------------------------------------------------------------------------
+// Generation protocol (Phase 5). A separate version namespace — a relay change
+// must not rev generation and vice versa. The API key never appears in any of
+// these messages (ADR-0008).
+// ---------------------------------------------------------------------------
+
+export const GENERATION_PROTOCOL_VERSION = 1 as const
+export const GENERATION_PORT_NAME = 'modaicom.generation'
+
+// Port (popup <-> service worker), request-scoped.
+export type RequestGenerationMessage = {
+  v: typeof GENERATION_PROTOCOL_VERSION
+  type: 'REQUEST_GENERATION'
+  request: unknown // validated by isGenerationRequest in the generation layer
+}
+export type CancelGenerationMessage = { v: typeof GENERATION_PROTOCOL_VERSION; type: 'CANCEL_GENERATION' }
+export type GenerationPortInbound = RequestGenerationMessage | CancelGenerationMessage
+
+export type GenerationResultMessage =
+  | { v: typeof GENERATION_PROTOCOL_VERSION; type: 'GENERATION_RESULT'; ok: true; text: string }
+  | {
+      v: typeof GENERATION_PROTOCOL_VERSION
+      type: 'GENERATION_RESULT'
+      ok: false
+      error: { kind: string; retryAfterMs?: number }
+    }
+
+// One-shot (sendMessage), extension-page origin only.
+export type GetProviderStatusMessage = { v: typeof GENERATION_PROTOCOL_VERSION; type: 'GET_PROVIDER_STATUS' }
+export type RecordConsentMessage = {
+  v: typeof GENERATION_PROTOCOL_VERSION
+  type: 'RECORD_TRANSMISSION_CONSENT'
+  providerId: string
+}
+export type TestProviderMessage = { v: typeof GENERATION_PROTOCOL_VERSION; type: 'TEST_PROVIDER' }
+export type GenerationOneShotMessage = GetProviderStatusMessage | RecordConsentMessage | TestProviderMessage
+
+function hasGenerationVersion(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && (value as Record<string, unknown>).v === GENERATION_PROTOCOL_VERSION
+}
+
+export function isGenerationPortMessage(value: unknown): value is GenerationPortInbound {
+  if (!hasGenerationVersion(value)) return false
+  if (value.type === 'CANCEL_GENERATION') return true
+  return value.type === 'REQUEST_GENERATION' && 'request' in value
+}
+
+export function isGenerationOneShotMessage(value: unknown): value is GenerationOneShotMessage {
+  if (!hasGenerationVersion(value)) return false
+  if (value.type === 'GET_PROVIDER_STATUS' || value.type === 'TEST_PROVIDER') return true
+  return value.type === 'RECORD_TRANSMISSION_CONSENT' && typeof value.providerId === 'string' && value.providerId.length > 0
+}
+
+export function isGenerationResultMessage(value: unknown): value is GenerationResultMessage {
+  if (!hasGenerationVersion(value) || value.type !== 'GENERATION_RESULT') return false
+  if (value.ok === true) return typeof value.text === 'string'
+  return value.ok === false && Boolean(value.error) && typeof (value.error as Record<string, unknown>).kind === 'string'
+}

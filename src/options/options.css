@@ -1,0 +1,82 @@
+.options {
+  max-width: 40rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  font: 14px/1.5 system-ui, sans-serif;
+}
+
+.options h1 {
+  font-size: 1.25rem;
+}
+
+.options__section {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+.options__section h2 {
+  margin-top: 0;
+  font-size: 1rem;
+}
+
+.options__note {
+  color: #444;
+  margin: 0.5rem 0;
+}
+
+.options__field {
+  display: block;
+  margin: 0.75rem 0;
+}
+
+.options__field > span {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.options__field input {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  box-sizing: border-box;
+}
+
+.options__consent {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.options__actions {
+  display: flex;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.options__actions button {
+  padding: 0.45rem 1rem;
+}
+
+.options__link {
+  background: none;
+  border: none;
+  color: #0a66c2;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.options__ok {
+  color: #0a7d33;
+}
+
+.options__err {
+  color: #b3261e;
+}
+
+.options__status ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}

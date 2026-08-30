@@ -7,15 +7,44 @@ import { Popup } from './Popup'
 const query = vi.fn()
 const tabsSendMessage = vi.fn()
 const sendMessage = vi.fn()
+const connect = vi.fn()
+const openOptionsPage = vi.fn()
+
+type FakePort = {
+  postMessage: ReturnType<typeof vi.fn>
+  disconnect: ReturnType<typeof vi.fn>
+  onMessage: { addListener: (fn: (m: unknown) => void) => void }
+  onDisconnect: { addListener: (fn: () => void) => void }
+  emit: (message: unknown) => void
+}
+
+function makeFakePort(): FakePort {
+  const listeners: Array<(m: unknown) => void> = []
+  return {
+    postMessage: vi.fn(),
+    disconnect: vi.fn(),
+    onMessage: { addListener: (fn) => listeners.push(fn) },
+    onDisconnect: { addListener: () => undefined },
+    emit: (message) => listeners.forEach((fn) => fn(message)),
+  }
+}
+
+const READY_STATUS = { configured: true, providerId: 'openai', model: 'gpt-4o-mini', consented: true }
+const POST_RESULT = {
+  kind: 'success' as const,
+  context: { kind: 'post-comment' as const, post: { authorDisplayName: 'Ada', originalAuthoredText: 'A useful post.' } },
+}
 
 describe('Popup', () => {
   beforeEach(() => {
     query.mockReset()
     tabsSendMessage.mockReset()
     sendMessage.mockReset()
+    connect.mockReset()
+    openOptionsPage.mockReset()
     vi.stubGlobal('chrome', {
       tabs: { query, sendMessage: tabsSendMessage },
-      runtime: { sendMessage, id: 'modaicom-test' },
+      runtime: { sendMessage, connect, openOptionsPage, id: 'modaicom-test' },
     })
   })
 
@@ -148,4 +177,74 @@ describe('Popup', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
+  it('offers "Open settings" instead of Generate when the provider is not configured', async () => {
+    query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example' }])
+    sendMessage.mockImplementation(async (msg: { type: string }) =>
+      msg.type === 'GET_PROVIDER_STATUS' ? { configured: false, consented: false } : null,
+    )
+    tabsSendMessage.mockResolvedValue(POST_RESULT)
+
+    render(<Popup />)
+
+    await screen.findByText('A useful post.')
+    expect(screen.queryByRole('button', { name: 'Generate reply' })).not.toBeInTheDocument()
+    const settings = screen.getByRole('button', { name: 'Open settings' })
+    const user = userEvent.setup()
+    await user.click(settings)
+    expect(openOptionsPage).toHaveBeenCalled()
+  })
+
+  it('generates a draft over the Port and never sends author names', async () => {
+    const user = userEvent.setup()
+    query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example' }])
+    sendMessage.mockImplementation(async (msg: { type: string }) =>
+      msg.type === 'GET_PROVIDER_STATUS' ? READY_STATUS : null,
+    )
+    tabsSendMessage.mockResolvedValue({
+      kind: 'success',
+      context: {
+        kind: 'comment-reply',
+        post: { authorDisplayName: 'Ada Lovelace', originalAuthoredText: 'The post body.' },
+        targetComment: { authorDisplayName: 'Grace Hopper', authoredText: 'The comment body.' },
+      },
+    })
+    const port = makeFakePort()
+    connect.mockReturnValue(port)
+
+    render(<Popup />)
+    await screen.findByText('The comment body.')
+    await user.click(screen.getByRole('button', { name: 'Generate reply' }))
+
+    expect(connect).toHaveBeenCalledWith({ name: 'modaicom.generation' })
+    const sent = port.postMessage.mock.calls[0]![0] as { type: string; request: unknown }
+    expect(sent.type).toBe('REQUEST_GENERATION')
+    expect(sent.request).toEqual({ interactionKind: 'comment-reply', postText: 'The post body.', commentText: 'The comment body.' })
+    expect(JSON.stringify(sent)).not.toContain('Ada Lovelace')
+    expect(JSON.stringify(sent)).not.toContain('Grace Hopper')
+
+    expect(screen.getByText('Drafting…')).toBeInTheDocument()
+    port.emit({ v: 1, type: 'GENERATION_RESULT', ok: true, text: 'Here is a drafted reply.' })
+    expect(await screen.findByDisplayValue('Here is a drafted reply.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument()
+  })
+
+  it('renders a fixed error + Retry for a retryable generation failure', async () => {
+    const user = userEvent.setup()
+    query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example' }])
+    sendMessage.mockImplementation(async (msg: { type: string }) =>
+      msg.type === 'GET_PROVIDER_STATUS' ? READY_STATUS : null,
+    )
+    tabsSendMessage.mockResolvedValue(POST_RESULT)
+    const port = makeFakePort()
+    connect.mockReturnValue(port)
+
+    render(<Popup />)
+    await screen.findByText('A useful post.')
+    await user.click(screen.getByRole('button', { name: 'Generate reply' }))
+    port.emit({ v: 1, type: 'GENERATION_RESULT', ok: false, error: { kind: 'rate-limited' } })
+
+    expect(await screen.findByText(/rate-limiting requests/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
 })
