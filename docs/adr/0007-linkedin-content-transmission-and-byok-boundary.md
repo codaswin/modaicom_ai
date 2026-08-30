@@ -12,6 +12,10 @@ records the deliberate, bounded reversal.
 
 - **Only a Generation Request leaves the device**: `{ interactionKind, postText }`
   for a post-comment, plus `commentText` for a comment-reply. Nothing else.
+- **From Phase 7, also**: the `{ tone, intent, length }` id triple the user
+  selected in the popup (ADR-0010). These are the user's own three menu choices —
+  no LinkedIn content, no PII, no author or page data — and they travel as a
+  separate message field, not inside the Generation Request.
 - **Never transmitted**: author display names, author headline, the
   `urn:li:activity:` / `urn:li:comment:` identifier, the publication-time label,
   any URL, DOM, HTML, cookies, account identifiers, the user's editor contents,
@@ -32,9 +36,10 @@ records the deliberate, bounded reversal.
   auto-generated.
 - Only when a **Transmission Consent** record `{ providerId, consentedAt }` exists
   in `chrome.storage.local`. The user grants it once per provider, with a
-  plain-language disclosure of exactly what is sent and where. Switching providers
-  requires a fresh consent. The service worker refuses to transmit without a
-  matching record (`transmission-not-consented`).
+  plain-language disclosure of exactly what is sent and where — from Phase 7 the
+  disclosure also states that the selected tone, intent and length go with it.
+  Switching providers requires a fresh consent. The service worker refuses to
+  transmit without a matching record (`transmission-not-consented`).
 - Each generation is one billable call against the user's key; the disclosure
   says so; there is no automatic retry.
 

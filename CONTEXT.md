@@ -1,6 +1,6 @@
 # modaicom
 
-modaicom is a user-controlled assistant for drafting responses to LinkedIn content. It reduces the effort of composing a response while leaving publication entirely to the user. From Phase 5, drafting may send the authored text the user explicitly selects to a user-configured AI provider using the user's own API key (BYOK, no shared backend); see ADR-0007 and ADR-0008. From Phase 6, the user shapes each draft with typed Tone, Intent and Response Length controls; see ADR-0009.
+modaicom is a user-controlled assistant for drafting responses to LinkedIn content. It reduces the effort of composing a response while leaving publication entirely to the user. From Phase 5, drafting may send the authored text the user explicitly selects to a user-configured AI provider using the user's own API key (BYOK, no shared backend); see ADR-0007 and ADR-0008. From Phase 6 the user has typed Tone, Intent and Response Length controls (ADR-0009); Phase 7 wires them into the prompt so they actually steer the draft (ADR-0010).
 
 ## Language
 
@@ -129,7 +129,7 @@ The minimised payload derived from a LinkedIn Interaction Context that is permit
 _Avoid_: Prompt payload, extraction blob, full context
 
 **Generation Input**:
-The provider-neutral `{ system, user }` strings the generation layer builds from a Generation Request. The AI Provider layer maps a Generation Input onto its own API shape.
+The provider-neutral `{ system, user }` strings the generation layer builds from a Generation Request and the Preference Instructions — the instructions render into `system` as a mandatory list, the authored text into `user`. The AI Provider layer maps a Generation Input onto its own API shape.
 _Avoid_: Prompt, messages array, chat request
 
 **AI Provider**:
@@ -145,11 +145,11 @@ _Avoid_: Terms acceptance, opt-in flag, telemetry consent
 _Avoid_: Settings blob, credentials object
 
 **Generated Draft**:
-The single read-only reply text a generation returns to the popup for the user to copy manually. It is never inserted into LinkedIn, never posted, never persisted, and never ranked against alternatives. From Phase 6 its Tone, Intent and Response Length are shaped by the user's Generation Preferences; multiple suggestions and editor insertion remain out of scope.
+The single read-only reply text a generation returns to the popup for the user to copy manually. It is never inserted into LinkedIn, never posted, never persisted, and never ranked against alternatives. From Phase 7 its Tone, Intent and Response Length are shaped by the user's Generation Preferences (Phase 6 built the controls; Phase 7 wired them into the prompt). Multiple suggestions and editor insertion remain out of scope.
 _Avoid_: Suggestion, completion, auto-reply
 
 **Generation Error**:
-The provider-independent failure union surfaced to the popup as fixed copy: `provider-not-configured`, `api-key-missing`, `transmission-not-consented`, `authentication-failed`, `rate-limited`, `request-timeout`, `network-error`, `provider-error`, `invalid-response`, `generation-cancelled`. Raw provider errors, HTTP status text, and response bodies are never surfaced.
+The provider-independent failure union surfaced to the popup as fixed copy: `provider-not-configured`, `api-key-missing`, `transmission-not-consented`, `invalid-preferences` (the selected tone/intent/length failed validation at the service-worker message boundary), `authentication-failed`, `rate-limited`, `request-timeout`, `network-error`, `provider-error`, `invalid-response`, `generation-cancelled`. Raw provider errors, HTTP status text, and response bodies are never surfaced.
 _Avoid_: Provider exception, error message string
 
 **Suggestion**:
@@ -177,7 +177,7 @@ The typed triple `{ tone, intent, length }` capturing the user's current Respons
 _Avoid_: Settings blob, prompt config, user profile
 
 **Preference Instructions**:
-The ordered, provider-neutral instruction strings — `[intent, tone, length]` — that `preferencesToInstructions` derives purely from Generation Preferences. Terse imperative prose with no LinkedIn or provider nouns. Consumed only inside the generation layer; never persisted, never messaged, never sent to the LinkedIn page. How they render into a Generation Input is a Phase 7 decision.
+The ordered, provider-neutral instruction strings — `[intent, tone, length]` — that `preferencesToInstructions` derives purely from Generation Preferences. Terse imperative prose with no LinkedIn or provider nouns. Derived in `runGeneration`, rendered into the Generation Input's `system` string as a mandatory list in that order (Intent first). Consumed only inside the generation layer; never persisted, never messaged, never sent to the LinkedIn page.
 _Avoid_: Prompt template, system prompt, instruction blob
 
 

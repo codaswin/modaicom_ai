@@ -1,6 +1,9 @@
 # Response controls: typed Tone, Intent and Length
 
 Status: accepted on 2026-08-31 (grill-with-docs). Builds on ADR-0007 and ADR-0008.
+The "What Phase 6 deliberately does not touch" boundary and the Phase 7 handoff
+below are **carried out by ADR-0010**, which also revises the instruction strings
+this ADR introduced (they were too soft, and the Length ranges overlapped).
 
 Phase 6 gives the user three deliberate controls over a draft — **Tone** (how it
 sounds), **Intent** (what the comment is for), and **Length** (how long) — without
