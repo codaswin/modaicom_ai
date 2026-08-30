@@ -22,17 +22,11 @@ Required observations:
 
 ## LinkedIn markup regimes
 
-As of 2026-08 LinkedIn serves two different frontends:
+LinkedIn serves two frontends — `legacy` on individual `/posts/...` pages, `sdui`
+on the home `/feed/`. See [ADR-0005](../adr/0005-linkedin-markup-regimes.md) and
+the selector reference in [linkedin-selectors.md](./linkedin-selectors.md).
 
-- **Legacy** on individual `/posts/...` and `/feed/update/urn:li:activity:...` pages:
-  `article` / `.feed-shared-update-v2` roots with a `urn:li:activity:` identifier
-  and an always-rendered `.comments-comment-box` composer.
-- **Server-driven UI ("SDUI")** on the logged-in home `/feed/`: obfuscated class
-  names, **no activity URN in the DOM**, posts rendered as `[role="listitem"]`
-  inside `[data-testid="mainFeed"]`, post body in `[data-testid="expandable-text-box"]`,
-  and a `tiptap` comment composer that only mounts **after the user opens a
-  post's comment section**.
-
-Feed-surface smoke testing must therefore click **Comment** on a post first; the
-inline trigger appears next to the composer that opens, not on the collapsed
-post. An always-visible feed trigger is tracked as follow-up work.
+Feed-surface smoke testing must click **Comment** on a post first: on the `sdui`
+feed the comment composer is lazily mounted, so the inline trigger appears next
+to the composer that opens, not on the collapsed post. An always-visible feed
+trigger is tracked as follow-up work.

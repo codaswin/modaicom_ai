@@ -12,9 +12,20 @@
 // Both regimes are recognised here so the inline trigger can appear on the feed
 // without weakening the individual-post guarantees.
 
-const LEGACY_FEED_CONTAINER_SELECTOR = 'main [role="feed"], main .scaffold-finite-scroll__content'
+export const LEGACY_FEED_CONTAINER_SELECTOR = 'main [role="feed"], main .scaffold-finite-scroll__content'
 export const SDUI_FEED_CONTAINER_SELECTOR = 'main [data-testid="mainFeed"]'
 export const FEED_CONTAINER_SELECTOR = `${LEGACY_FEED_CONTAINER_SELECTOR}, ${SDUI_FEED_CONTAINER_SELECTOR}`
+
+export type FeedMarkupRegime = 'legacy' | 'sdui' | 'unknown'
+
+// Which structural DOM family the current home feed is rendering. LinkedIn is
+// mid-migration and A/B tests more than one feed frontend; an unrecognised
+// container is reported so the caller can fail closed.
+export function feedMarkupRegime(root: Document | Element = document): FeedMarkupRegime {
+  if (root.querySelector(SDUI_FEED_CONTAINER_SELECTOR)) return 'sdui'
+  if (root.querySelector(LEGACY_FEED_CONTAINER_SELECTOR)) return 'legacy'
+  return 'unknown'
+}
 
 const LEGACY_FEED_POST_ROOT_SELECTOR =
   'article[data-urn^="urn:li:activity:"], article[data-id^="urn:li:activity:"], .feed-shared-update-v2[data-urn^="urn:li:activity:"], .feed-shared-update-v2[data-id^="urn:li:activity:"]'
@@ -30,7 +41,6 @@ export const POST_ROOT_SELECTOR =
 export const ORIGINAL_BODY_SELECTORS = [
   '[data-testid="post-body"]',
   '[data-testid="expandable-text-box"]',
-  '[data-view-name="feed-commentary"]',
   '[data-test-id="feed-shared-update-v2__description"]',
   '.feed-shared-update-v2__description',
   '.feed-shared-inline-show-more-text',
@@ -69,6 +79,11 @@ export function stablePostIdentity(post: Element): string | undefined {
   // SDUI feed posts carry no activity URN. The framework reconciliation key on
   // the list item (or its wrapper) is unique per post and stable for the page
   // session, which is all the inline-trigger deduplication needs.
+  //
+  // UNVERIFIED: the observed value looks like `expanded<hash>_MAIN_FEED_RELEVANCE`.
+  // If the `expanded` segment flips when the post's "…more" is toggled, the
+  // identity changes mid-session and the trigger is briefly duplicated until the
+  // next reconcile (~50ms). Re-check against live LinkedIn if that shows up.
   const componentKey = post.getAttribute('componentkey') ?? post.parentElement?.getAttribute('componentkey') ?? undefined
   return componentKey?.trim() || undefined
 }

@@ -1,10 +1,6 @@
 import { classifyLinkedInRoute } from './routes'
 import { FEED_CONTAINER_SELECTOR, FEED_POST_ROOT_SELECTOR, POST_ROOT_SELECTOR, ORIGINAL_BODY_SELECTORS, SDUI_EXPAND_CONTROL_SELECTOR, SDUI_FEED_POST_ROOT_SELECTOR, findOriginalBody, isValidatedPostRoot, stablePostIdentity } from './postAdapter'
 
-// Kept in sync with RELAY_VERSION in ../../shared/relay (imported literally here
-// to avoid a module cycle with the relay guard).
-const PAGE_EXTRACTION_MESSAGE = { version: 1, type: 'REQUEST_PAGE_EXTRACTION' } as const
-
 export type ExtractedPostContext = {
   authorDisplayName: string
   originalAuthoredText: string
@@ -30,6 +26,42 @@ export type PostExtractionResult =
         | 'ambiguous-candidates'
         | 'selection-failure'
     }
+
+const BLOCK_TAGS = new Set([
+  'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'FIGCAPTION',
+  'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'P', 'PRE', 'SECTION',
+])
+
+// Collects authored text from an element: preserves meaningful paragraph breaks,
+// collapses incidental whitespace, and drops elements matching `excludeSelector`
+// (expand toggles and similar chrome). Language-agnostic — never parses or
+// translates.
+export function normalizeLinkedInText(element: Element, excludeSelector?: string): string {
+  let rawText = ''
+  const visit = (node: Node) => {
+    node.childNodes.forEach((child) => {
+      if (child.nodeType === Node.TEXT_NODE) {
+        rawText += child.textContent ?? ''
+        return
+      }
+      if (child.nodeType !== Node.ELEMENT_NODE) return
+      const childElement = child as Element
+      if (excludeSelector && childElement.matches(excludeSelector)) return
+      const isBlock = BLOCK_TAGS.has(childElement.tagName)
+      if (isBlock && rawText && !rawText.endsWith('\n')) rawText += '\n'
+      visit(child)
+      if (isBlock && !rawText.endsWith('\n')) rawText += '\n'
+    })
+  }
+  visit(element)
+  return rawText
+    .replace(/\u00a0/g, ' ')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
 
 export function extractPostContextInPage(
   root: Document | Element = document,
@@ -98,76 +130,19 @@ export function extractPostContextInPage(
     return undefined
   }
 
-  const normalizeText = (element: Element) => {
-    let rawText = ''
-    const blockTags = new Set([
-      'ADDRESS',
-      'ARTICLE',
-      'ASIDE',
-      'BLOCKQUOTE',
-      'DIV',
-      'FIGCAPTION',
-      'H1',
-      'H2',
-      'H3',
-      'H4',
-      'H5',
-      'H6',
-      'LI',
-      'P',
-      'PRE',
-      'SECTION',
-    ])
-
-    const visit = (node: Node) => {
-      node.childNodes.forEach((child) => {
-        if (child.nodeType === Node.TEXT_NODE) {
-          rawText += child.textContent ?? ''
-          return
-        }
-        if (child.nodeType === Node.ELEMENT_NODE) {
-          const childElement = child as Element
-          // The SDUI feed renders its "… more" / "… less" expander as a button
-          // inside the post body; it is chrome, not authored text.
-          if (childElement.matches(SDUI_EXPAND_CONTROL_SELECTOR)) {
-            return
-          }
-          const isBlock = blockTags.has(childElement.tagName)
-          if (isBlock && rawText && !rawText.endsWith('\n')) {
-            rawText += '\n'
-          }
-          visit(child)
-          if (isBlock && !rawText.endsWith('\n')) {
-            rawText += '\n'
-          }
-        }
-      })
-    }
-    visit(element)
-
-    return rawText
-      .replace(/\u00a0/g, ' ')
-      .split('\n')
-      .map((line) => line.replace(/[ \t]+/g, ' ').trim())
-      .join('\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim()
-  }
-
+  const normalizeText = (element: Element) => normalizeLinkedInText(element, SDUI_EXPAND_CONTROL_SELECTOR)
   const authoredBody = findOriginalBody(candidate) ?? findElement(bodySelectors)
-  const hasSeeMore = authoredBody
-    ? Array.from(
-        authoredBody.querySelectorAll<HTMLElement>(
-          `button, a, [role="button"], ${SDUI_EXPAND_CONTROL_SELECTOR}`,
-        ),
-      ).some((control) => {
-        const label = control.textContent?.trim() ?? ''
-        if (/\bsee\s+more\b/i.test(label)) return true
-        // SDUI feed renders a "… more" button inside a collapsed post body.
-        return control.matches(SDUI_EXPAND_CONTROL_SELECTOR) && /(^|\W)more$/i.test(label)
-      })
+  const isCollapsed = authoredBody
+    ? // SDUI feed: the expander is a dedicated control that LinkedIn *removes*
+      // (not relabels) once the post is expanded, so its presence is a
+      // locale-independent "collapsed" signal.
+      Boolean(authoredBody.querySelector(SDUI_EXPAND_CONTROL_SELECTOR)) ||
+      // Legacy feed / post pages: fall back to the visible control text.
+      Array.from(authoredBody.querySelectorAll<HTMLElement>('button, a, [role="button"]')).some((control) =>
+        /\bsee\s+more\b/i.test(control.textContent?.trim() ?? ''),
+      )
     : false
-  if (hasSeeMore) {
+  if (isCollapsed) {
     return { kind: 'collapsed-post' }
   }
 
@@ -270,49 +245,29 @@ const postFailureKinds = new Set<PostExtractionResult['kind']>([
   'selection-failure',
 ])
 
+export function isExtractedPostContext(value: unknown): value is ExtractedPostContext {
+  if (!value || typeof value !== 'object') return false
+  const context = value as Record<string, unknown>
+  if (
+    typeof context.authorDisplayName !== 'string' ||
+    !context.authorDisplayName.trim() ||
+    typeof context.originalAuthoredText !== 'string' ||
+    !context.originalAuthoredText.trim()
+  ) {
+    return false
+  }
+  return ['authorHeadline', 'stablePostIdentifier', 'publicationTimeLabel'].every(
+    (key) =>
+      context[key] === undefined ||
+      (typeof context[key] === 'string' && (context[key] as string).trim().length > 0),
+  )
+}
+
 export function isPostExtractionResult(value: unknown): value is PostExtractionResult {
   if (!value || typeof value !== 'object') return false
   const candidate = value as Record<string, unknown>
-  if (candidate.kind === 'success') {
-    if (!candidate.context || typeof candidate.context !== 'object') return false
-    const context = candidate.context as Record<string, unknown>
-    if (
-      typeof context.authorDisplayName !== 'string' ||
-      !context.authorDisplayName.trim() ||
-      typeof context.originalAuthoredText !== 'string' ||
-      !context.originalAuthoredText.trim()
-    ) {
-      return false
-    }
-    return ['authorHeadline', 'stablePostIdentifier', 'publicationTimeLabel'].every(
-      (key) =>
-        context[key] === undefined ||
-        (typeof context[key] === 'string' && context[key].trim().length > 0),
-    )
-  }
+  if (candidate.kind === 'success') return isExtractedPostContext(candidate.context)
   return typeof candidate.kind === 'string' && postFailureKinds.has(candidate.kind as PostExtractionResult['kind'])
 }
 
-export async function extractCurrentPostContext(): Promise<PostExtractionResult> {
-  try {
-    const [activeTab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    })
-    if (!activeTab?.id) {
-      return { kind: 'unexpected-error' }
-    }
-
-    // Ask the persistent content script to run the extractor in the page. A
-    // `chrome.scripting.executeScript({ func })` call would serialize the
-    // function and lose its module scope, so it could never resolve the adapter
-    // helpers it depends on.
-    const runtimeResult: unknown = await chrome.tabs.sendMessage(activeTab.id, PAGE_EXTRACTION_MESSAGE)
-    return isPostExtractionResult(runtimeResult)
-      ? runtimeResult
-      : { kind: 'unexpected-error' }
-  } catch {
-    return { kind: 'unexpected-error' }
-  }
-}
 

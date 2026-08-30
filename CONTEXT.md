@@ -33,52 +33,76 @@ A Primary Post whose complete authored text is not currently available to modaic
 _Avoid_: Short post, truncated-by-modaicom post
 
 **Original Authored Text**:
-Text written by the Primary Post author, excluding the body of an embedded or shared post.
+Text written by the Primary Post author, excluding the body of an embedded or shared post. Preserved as written, in any language, without parsing or translation. Detecting the UI controls *around* it (collapse toggles, author labels) is best-effort and can be language-dependent; when that detection fails, extraction returns a typed failure, never wrong text.
 _Avoid_: Quoted post, reshared content
 
 **Feed-Post Targeting**:
 The capability through which a user explicitly identifies one specific post on the LinkedIn home feed or an individual LinkedIn post page for read-only context extraction.
 _Avoid_: First-post extraction, automatic feed selection
 
+**Markup Regime**:
+The structural DOM family a LinkedIn surface renders. `legacy` uses `article` / `.feed-shared-update-v2` roots with a `urn:li:activity:` identifier and an always-present comment composer; `sdui` (server-driven UI) uses obfuscated classes, no activity identifier, `[data-testid="mainFeed"]` list items, and a comment composer that appears only after the user opens a post's comments. modaicom recognises both; an unrecognised feed is treated as `unknown` and receives no Inline Trigger.
+_Avoid_: LinkedIn version, feed layout, A/B variant
+
 **Top-Level Feed Post**:
 A post candidate that belongs directly to the home feed's post collection, excluding nested shared posts, comments, replies, embedded content, and unrelated cards.
 _Avoid_: Visible card, first feed item, nested post
 
-**Feed Selection Session**:
-Legacy interaction in which modaicom presented per-post Selection Controls for currently loaded Top-Level Feed Posts. It is not part of the active Inline Trigger UX.
-_Avoid_: Passive feed scanning, automatic selection
-
-**Selection Control**:
-A temporary per-post “Use this post” action attached to one Top-Level Feed Post during the legacy Feed Selection Session. It is distinct from the Inline Trigger.
-_Avoid_: Feed button, global select action
-
 **Inline Trigger**:
-A branded, accessible `modaicom` button placed beside an eligible comment composer and explicitly used by the user to target that composer’s owning Top-Level Feed Post or Primary Post for read-only extraction.
+A branded, accessible `modaicom` button placed beside an eligible LinkedIn comment or reply composer and explicitly used by the user to target that composer’s Interaction Target for read-only extraction.
 _Avoid_: Selection Control, automatic trigger, editor insertion control
 
 **Inline Targeting Session**:
-The ephemeral interaction beginning when the user clicks an Inline Trigger and ending after the selected Owning Post's extraction result reaches its terminal handoff or is cleared.
+The ephemeral interaction beginning when the user clicks an Inline Trigger and ending after the selected Interaction Target's extraction result reaches its terminal handoff or is cleared.
 _Avoid_: Persistent selection, background targeting
 
+**Interaction Target**:
+A validated, click-ready handle resolved from one composer: its kind (`post-comment` or `comment-reply`), its Owning Post, and — for `comment-reply` — its Target Comment. One Inline Trigger serves exactly one Interaction Target.
+_Avoid_: Selection, target node, nearest card
+
+**LinkedIn Interaction Context**:
+The discriminated read-only payload an Inline Targeting Session produces: a **Post-Comment Interaction** (the Owning Post's Extracted Post Context) or a **Comment-Reply Interaction** (the Owning Post's Extracted Post Context plus one Target Comment's Comment Author and Comment Body).
+_Avoid_: Extraction blob, comment payload
+
 **Session Relay Result**:
-The latest typed extraction outcome temporarily handed from an Inline Targeting Session to the popup for read-only display.
+The latest typed LinkedIn Interaction Context, or typed failure, temporarily handed from an Inline Targeting Session to the popup for read-only display.
 _Avoid_: Persistent context, global latest result
 
 **Eligible Comment Composer**:
-A genuine LinkedIn comment editor owned by a validated target post, excluding replies, messages, search fields, post composers, nested/shared posts, and unrelated editable UI.
+A genuine LinkedIn top-level comment editor owned by a validated Owning Post, excluding Reply Composers, messages, search fields, post composers, nested/shared posts, and unrelated editable UI.
 _Avoid_: Any textarea, reply editor, post composer
 
+**Reply Composer**:
+A genuine LinkedIn reply editor whose validated Target Comment belongs to exactly one Owning Post. Distinct from an Eligible Comment Composer. Recognised only in the `legacy` Markup Regime; a reply composer in any other regime receives no Inline Trigger.
+_Avoid_: Nested comment box, any reply-looking editor
+
 **Owning Post**:
-The validated Top-Level Feed Post or Primary Post that directly contains an Eligible Comment Composer and is targeted when its Inline Trigger is clicked.
+The validated Top-Level Feed Post or Primary Post that contains a Post-Comment Interaction's Eligible Comment Composer, or a Comment-Reply Interaction's Target Comment, and is targeted when its Inline Trigger is clicked.
 _Avoid_: Nearest card, focused post, inferred ancestor
 
-**Ephemeral Selection Token**:
-A temporary marker attached to the exact Owning Post Element selected during an Inline Targeting Session so modaicom can verify that same target before extraction. It has no persistence beyond the active session.
-_Avoid_: Stored post reference, durable selector
+**Comment**:
+A LinkedIn comment element with a recognised structural comment-root marker for the current Markup Regime and exactly one validated Owning Post ancestor, rejecting nested and shared posts. Carries a `urn:li:comment:` stable identity in supported regimes.
+_Avoid_: Comment card, nearest comment, thread
 
-**Selection Banner**:
-Legacy temporary page-level affordance from the Feed Selection Session UX; it is not part of the active Inline Trigger flow.
-_Avoid_: Persistent LinkedIn UI, popup-only cancellation
+**Target Comment**:
+The single Comment a Comment-Reply Interaction extracts: the top-level comment of the thread whose shared reply composer the user targeted. Nested replies within that thread are not individually targetable.
+_Avoid_: Replied-to reply, nearest comment, focused comment
+
+**Comment Body**:
+The dedicated authored-text region of a Comment. Preserved as written, in any language, without parsing or translation; embedded cards, polls, translation controls and surrounding chrome are excluded, and detecting that chrome is best-effort. When no Comment Body region is recognised, extraction fails typed rather than returning the comment card's raw text.
+_Avoid_: Comment card text, comment scrape
+
+**Comment Author**:
+The display name from a Comment's actor-name region, normalized with best-effort removal of connection-degree, "Author", "Following", and verification chrome. "LinkedIn Member" (a deactivated account) is a valid Comment Author.
+_Avoid_: Commenter handle, inferred author
+
+**Comment Extraction Failure**:
+A typed Comment-Reply outcome when the Owning Post extracts but the Target Comment does not — comment not found, comment author not found, comment no-text, comment collapsed, comment stale-target, or ambiguous target comment. A Comment-Reply Interaction is all-or-nothing: a comment-half failure fails the whole interaction rather than downgrading to a Post-Comment result.
+_Avoid_: Partial comment context, silent downgrade
+
+**Ephemeral Selection Token**:
+A temporary marker attached to the exact element(s) selected during an Inline Targeting Session — the Owning Post, and for a Comment-Reply Interaction also the Target Comment — so modaicom can verify the same target(s) before extraction. It has no persistence beyond the active session.
+_Avoid_: Stored post reference, durable selector
 
 **Feed Candidate Discovery**:
 The conservative, adapter-owned process of finding exactly the currently loaded Top-Level Feed Posts on the supported `/feed/` surface while excluding nested or unrelated content.
@@ -92,24 +116,12 @@ _Avoid_: Best-guess candidate, first-match selection
 A typed outcome when Feed Candidate Discovery or page injection cannot start or complete a Feed Selection Session.
 _Avoid_: Extraction failure, silent fallback
 
-**Selected Feed Post**:
-The one Top-Level Feed Post explicitly chosen by the user during a Feed Selection Session and subsequently treated as the Primary Post for context extraction.
-_Avoid_: Focused post, inferred target
-
-**Selection Snapshot**:
-Legacy fixed candidate set from the Feed Selection Session UX; it is not used by the active Inline Trigger flow.
-_Avoid_: Live feed tracking, mutation-observer targeting
-
-**Feed Targeting Outcome**:
-A typed result from the feed-targeting flow, covering successful selection, cancellation, candidate-discovery or injection failure, ambiguity, and stale-target detection.
-_Avoid_: Nullable target, generic failure string
-
 **Stale Target**:
 The typed outcome when the Top-Level Feed Post selected by the user is removed or no longer matches its original DOM target before extraction completes.
 _Avoid_: Substitute post, nearest-post fallback
 
 **Targeted Comment/Reply Extraction**:
-The future capability to extract one user-identified LinkedIn comment or reply with its relevant surrounding context. It is intentionally outside the smallest Phase 2 slice.
+The Phase 4 capability to extract one user-identified LinkedIn Target Comment together with its Owning Post context, via a Comment-Reply Interaction. Reply-thread bundling and nested-reply targeting remain out of scope.
 _Avoid_: All-comments extraction, arbitrary comment selection
 
 **Suggestion**:
@@ -121,4 +133,29 @@ _Avoid_: Published comment, automatic reply
 A short-lived per-tab ordering record that prevents an older Inline Targeting Session result from replacing a newer one across reinjection, navigation, or service-worker restart. It contains no LinkedIn content.
 
 **Composer Adapter Version**:
-The explicit version of the conservative structural allowlist used to recognize Eligible Comment Composers. Unknown variants fail closed until documented and fixture-tested.
+The explicit version of the conservative structural allowlist used to recognize and classify Eligible Comment Composers and Reply Composers. Unknown variants fail closed until documented and fixture-tested.
+
+**Comment Adapter Version**:
+The explicit version of the conservative structural allowlist used to recognize Comment roots, Comment Body regions, Comment Authors, and comment collapse controls. Unknown markup fails closed until documented and fixture-tested.
+
+## Retired
+
+Terms from the abandoned popup-driven feed-selection UX. Kept here so older commits and ADR-0003's history stay readable; not part of the active vocabulary.
+
+**Feed Selection Session**:
+Interaction in which modaicom presented per-post Selection Controls for currently loaded Top-Level Feed Posts.
+
+**Selection Control**:
+A temporary per-post “Use this post” action attached to one Top-Level Feed Post during a Feed Selection Session.
+
+**Selection Banner**:
+A temporary page-level affordance from the Feed Selection Session UX.
+
+**Selected Feed Post**:
+The one Top-Level Feed Post explicitly chosen by the user during a Feed Selection Session.
+
+**Selection Snapshot**:
+The fixed candidate set captured for a Feed Selection Session.
+
+**Feed Targeting Outcome**:
+A typed result from the feed-selection flow, covering successful selection, cancellation, candidate-discovery or injection failure, ambiguity, and stale-target detection.

@@ -46,7 +46,7 @@ Load the generated `dist` directory through Chrome's **Load unpacked** option.
 
 ## Manual smoke test
 
-The Phase 3 validation record is maintained in [docs/testing/phase-3-manual-smoke-test.md](docs/testing/phase-3-manual-smoke-test.md).
+Validation records: [Phase 3](docs/testing/phase-3-manual-smoke-test.md), [Phase 4](docs/testing/phase-4-manual-smoke-test.md). Selector reference and re-verification snippet: [docs/testing/linkedin-selectors.md](docs/testing/linkedin-selectors.md).
 
 1. Run `npm run check` and confirm it succeeds.
 2. Load the generated `dist` directory as an unpacked Chrome extension.
@@ -81,11 +81,11 @@ Future phases may introduce targeted comment/reply extraction, a prompt engine, 
 
 Phase 3 uses exact LinkedIn host permissions and a static `document_idle` content script so an inline `modaicom` trigger can appear beside eligible comment composers while the popup is closed. Before an explicit click, the content script inspects only structural information needed to identify composers and owning posts; it does not read authored post/comment text or editor values. After a click, only the selected post’s typed plain context or failure is relayed through the service worker’s five-minute `chrome.storage.session` handoff. The popup’s individual-post fallback asks the same content script to extract, so the only permissions are `activeTab` and `storage`. No URLs, HTML, editor text, raw exceptions, analytics, logging, network transmission, or long-term persistence are used. Extraction remains read-only: modaicom never clicks “see more,” inserts text, or publishes a comment or reply.
 
-LinkedIn currently serves two markup regimes and both are recognised: the legacy `article` / `.feed-shared-update-v2` structure on individual `/posts/...` pages, and the newer server-driven UI on the home `/feed/` (obfuscated classes, no activity URN, `[data-testid="mainFeed"]` list items, a lazily mounted comment composer). See [ADR-0004](docs/adr/0004-linkedin-sdui-feed-and-content-script-extraction.md).
+LinkedIn currently serves two markup regimes and both are recognised: the legacy `article` / `.feed-shared-update-v2` structure on individual `/posts/...` pages, and the newer server-driven UI on the home `/feed/` (obfuscated classes, no activity URN, `[data-testid="mainFeed"]` list items, a lazily mounted comment composer). An unrecognised feed fails closed. See [ADR-0005](docs/adr/0005-linkedin-markup-regimes.md); the popup's extraction transport is [ADR-0004](docs/adr/0004-popup-extraction-via-content-script.md). Selectors and a re-verification snippet live in [docs/testing/linkedin-selectors.md](docs/testing/linkedin-selectors.md).
 
 ## Status
 
-Implemented scope includes Phase 0 Foundation, Phase 1 LinkedIn Detection, Phase 2 Primary Post context extraction, and the revised Phase 3 inline Feed-Post Targeting design. The inline-trigger architecture is documented in ADR-0003; the revised inline-trigger slice is implemented. Comment/reply extraction, AI generation, editor insertion, and publishing automation remain outside this scope.
+Implemented scope includes Phase 0 Foundation, Phase 1 LinkedIn Detection, Phase 2 Primary Post context extraction, the revised Phase 3 inline Feed-Post Targeting design, and Phase 4 Targeted Comment/Reply Extraction. One Inline Trigger is parameterised by an `Interaction Target` (`post-comment` or `comment-reply`); a reply trigger appears beside a `legacy` LinkedIn reply composer, resolves exactly one Target Comment and its Owning Post, and relays a discriminated `LinkedInInteractionContext`. Comment-reply is not offered on the `sdui` feed (no provable reply→comment link). The inline-trigger architecture is ADR-0003; ADR-0004/0005/0006 cover the extraction transport, markup-regime handling, and the comment-reply shape. AI generation, editor insertion, and publishing automation remain outside this scope.
 
 ## License
 

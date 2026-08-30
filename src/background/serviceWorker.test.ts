@@ -25,8 +25,8 @@ describe('service-worker relay ordering', () => {
     setupChrome(store)
     const { handleRelayMessage } = await import('./serviceWorker')
     const sender = { id: 'extension', tab: { id: 1 } } as chrome.runtime.MessageSender
-    await handleRelayMessage({ version: 1, type: 'CLEAR_RELAY', sessionId: 'new-session' }, sender)
-    await handleRelayMessage({ version: 1, type: 'INLINE_EXTRACTION_RESULT', sessionId: 'old-session', generation: 1, result }, sender)
+    await handleRelayMessage({ version: 2, type: 'CLEAR_RELAY', sessionId: 'new-session' }, sender)
+    await handleRelayMessage({ version: 2, type: 'INLINE_EXTRACTION_RESULT', sessionId: 'old-session', generation: 1, result }, sender)
     expect(store.has(relayKey(1))).toBe(false)
   })
 
@@ -35,10 +35,10 @@ describe('service-worker relay ordering', () => {
     setupChrome(store)
     const { handleRelayMessage } = await import('./serviceWorker')
     const sender = { id: 'extension', tab: { id: 1 } } as chrome.runtime.MessageSender
-    await handleRelayMessage({ version: 1, type: 'CLEAR_RELAY', sessionId: 'session-a' }, sender)
-    await handleRelayMessage({ version: 1, type: 'INLINE_EXTRACTION_RESULT', sessionId: 'session-a', generation: 1, result }, sender)
-    await handleRelayMessage({ version: 1, type: 'CLEAR_RELAY', sessionId: 'session-a' }, sender)
-    await handleRelayMessage({ version: 1, type: 'INLINE_EXTRACTION_RESULT', sessionId: 'session-a', generation: 1, result }, sender)
+    await handleRelayMessage({ version: 2, type: 'CLEAR_RELAY', sessionId: 'session-a' }, sender)
+    await handleRelayMessage({ version: 2, type: 'INLINE_EXTRACTION_RESULT', sessionId: 'session-a', generation: 1, result }, sender)
+    await handleRelayMessage({ version: 2, type: 'CLEAR_RELAY', sessionId: 'session-a' }, sender)
+    await handleRelayMessage({ version: 2, type: 'INLINE_EXTRACTION_RESULT', sessionId: 'session-a', generation: 1, result }, sender)
     expect(store.has(relayKey(1))).toBe(false)
   })
 
@@ -46,7 +46,7 @@ describe('service-worker relay ordering', () => {
     const store = new Map<string, unknown>()
     const session = setupChrome(store)
     const now = Date.now()
-    store.set(generationKey(1), { version: 1, generation: 2, counter: 3, sessionId: 's', createdAt: now - 20, expiresAt: now - 1 })
+    store.set(generationKey(1), { version: 2, generation: 2, counter: 3, sessionId: 's', createdAt: now - 20, expiresAt: now - 1 })
     const { readAndClearRelay } = await import('./serviceWorker')
     await readAndClearRelay(1)
     expect(session.remove).toHaveBeenCalledWith(generationKey(1))

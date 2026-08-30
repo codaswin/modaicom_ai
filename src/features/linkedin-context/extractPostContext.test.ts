@@ -1,7 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import {
-  extractCurrentPostContext,
   extractPostContextFromDocument,
   extractPostContextFromElementInPage,
   type PostExtractionResult,
@@ -65,6 +64,26 @@ describe('extractPostContextFromDocument', () => {
         originalAuthoredText: 'Feed post body.',
       },
     })
+  })
+
+  it('degrades to author-not-found on an SDUI post whose author cannot be read', () => {
+    const target = page(
+      `
+      <main>
+        <div data-testid="mainFeed" role="list">
+          <div componentkey="k">
+            <div role="listitem">
+              <img alt="decorative background" />
+              <div data-testid="expandable-text-box">A post with an unreadable author.</div>
+            </div>
+          </div>
+        </div>
+      </main>
+    `,
+      'https://www.linkedin.com/feed/',
+    )
+    const post = target.document.querySelector('[role="listitem"]') as Element
+    expect(extractPostContextFromElementInPage(post, target.url)).toEqual({ kind: 'author-not-found' })
   })
 
   it('extracts required fields and permitted optional metadata', () => {
@@ -242,65 +261,6 @@ describe('extractPostContextFromDocument', () => {
       '<article data-urn="urn:li:activity:123"><div data-testid="actor-name">Ada</div><div data-testid="post-body">Text</div></article>',
     )
     expect(JSON.stringify(result)).not.toContain('linkedin.com')
-  })
-})
-describe('extractCurrentPostContext', () => {
-  const query = vi.fn()
-  const sendMessage = vi.fn()
-
-  beforeEach(() => {
-    query.mockReset()
-    sendMessage.mockReset()
-    vi.stubGlobal('chrome', {
-      tabs: { query, sendMessage },
-      runtime: { id: 'modaicom-test' },
-    })
-    query.mockResolvedValue([{ id: 7 }])
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it('asks the page content script to extract the current post', async () => {
-    sendMessage.mockResolvedValue({
-      kind: 'success',
-      context: { authorDisplayName: 'Ada', originalAuthoredText: 'Text' },
-    })
-
-    await expect(extractCurrentPostContext()).resolves.toMatchObject({ kind: 'success' })
-    expect(sendMessage).toHaveBeenCalledWith(7, { version: 1, type: 'REQUEST_PAGE_EXTRACTION' })
-  })
-
-  it.each([
-    undefined,
-    null,
-    {},
-    { kind: 'unknown' },
-    { kind: 'success', context: {} },
-  ])('maps malformed runtime result %j to unexpected-error', async (runtimeResult) => {
-    sendMessage.mockResolvedValue(runtimeResult)
-
-    await expect(extractCurrentPostContext()).resolves.toEqual({
-      kind: 'unexpected-error',
-    })
-  })
-
-  it('maps a missing active tab id to unexpected-error', async () => {
-    query.mockResolvedValue([{}])
-
-    await expect(extractCurrentPostContext()).resolves.toEqual({ kind: 'unexpected-error' })
-    expect(sendMessage).not.toHaveBeenCalled()
-  })
-
-  it('does not log when the content script is unreachable', async () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    sendMessage.mockRejectedValue(new Error('Could not establish connection'))
-
-    await expect(extractCurrentPostContext()).resolves.toEqual({
-      kind: 'unexpected-error',
-    })
-    expect(consoleError).not.toHaveBeenCalled()
   })
 })
 
