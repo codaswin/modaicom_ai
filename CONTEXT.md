@@ -1,6 +1,6 @@
 # modaicom
 
-modaicom is a user-controlled assistant for drafting responses to LinkedIn content. It reduces the effort of composing a response while leaving publication entirely to the user. From Phase 5, drafting may send the authored text the user explicitly selects to a user-configured AI provider using the user's own API key (BYOK, no shared backend); see ADR-0007 and ADR-0008.
+modaicom is a user-controlled assistant for drafting responses to LinkedIn content. It reduces the effort of composing a response while leaving publication entirely to the user. From Phase 5, drafting may send the authored text the user explicitly selects to a user-configured AI provider using the user's own API key (BYOK, no shared backend); see ADR-0007 and ADR-0008. From Phase 6, the user shapes each draft with typed Tone, Intent and Response Length controls; see ADR-0009.
 
 ## Language
 
@@ -145,7 +145,7 @@ _Avoid_: Terms acceptance, opt-in flag, telemetry consent
 _Avoid_: Settings blob, credentials object
 
 **Generated Draft**:
-The single read-only reply text a generation returns to the popup for the user to copy manually. It is never inserted into LinkedIn, never posted, never persisted, and never ranked against alternatives. Multiple suggestions, tone/intent/length controls, and editor insertion are out of scope.
+The single read-only reply text a generation returns to the popup for the user to copy manually. It is never inserted into LinkedIn, never posted, never persisted, and never ranked against alternatives. From Phase 6 its Tone, Intent and Response Length are shaped by the user's Generation Preferences; multiple suggestions and editor insertion remain out of scope.
 _Avoid_: Suggestion, completion, auto-reply
 
 **Generation Error**:
@@ -155,6 +155,30 @@ _Avoid_: Provider exception, error message string
 **Suggestion**:
 The future capability to generate and rank multiple candidate responses. Phase 5 produces exactly one Generated Draft; ranked suggestions are deferred. A Suggestion is never published automatically.
 _Avoid_: Published comment, automatic reply
+
+**Response Controls**:
+The Phase 6 capability giving the user three deliberate, typed choices over a Generated Draft — Tone, Intent and Response Length — with no free-text prompt field, no user-created tones or intents, and no personality learning. The LinkedIn DOM adapter and the AI Provider layer are unaware of these choices.
+_Avoid_: Prompt settings, style options, custom instructions
+
+**Tone**:
+How a Generated Draft should sound, chosen from a fixed v1 set of `professional`, `friendly`, `confident`, `thoughtful`. Stored and validated as the `id` only; the display label and the underlying instruction text are never persisted or messaged.
+_Avoid_: Voice, style, mood
+
+**Intent**:
+What a Generated Draft is *for*, chosen from a fixed v1 set of `support`, `add-insight`, `ask-question`, `answer`, `disagree`, `congratulate`. One universal set serves both a Post-Comment Interaction and a Comment-Reply Interaction in v1. Stored and validated as the `id` only.
+_Avoid_: Goal, purpose flag, comment type
+
+**Response Length**:
+Roughly how long a Generated Draft should be, chosen from `short`, `medium`, `long`. The UI shows qualitative labels only (no word counts); an approximate sentence-count target is kept in the registry for later prompt assembly. Stored and validated as the `id` only.
+_Avoid_: Word count, size, verbosity
+
+**Generation Preferences**:
+The typed triple `{ tone, intent, length }` capturing the user's current Response Controls. Persisted as the `id` triple in `chrome.storage.local` under `modaicom.generation.preferences` (never `chrome.storage.sync`), read on popup mount and written on change. A strict runtime guard requires exactly those three keys, each a known `id`. An invalid or absent stored value falls back to the default `{ tone: 'professional', intent: 'add-insight', length: 'medium' }`; an invalid value arriving over a runtime message (from Phase 7) fails with a typed Generation Error rather than silently defaulting. Contains no LinkedIn content.
+_Avoid_: Settings blob, prompt config, user profile
+
+**Preference Instructions**:
+The ordered, provider-neutral instruction strings — `[intent, tone, length]` — that `preferencesToInstructions` derives purely from Generation Preferences. Terse imperative prose with no LinkedIn or provider nouns. Consumed only inside the generation layer; never persisted, never messaged, never sent to the LinkedIn page. How they render into a Generation Input is a Phase 7 decision.
+_Avoid_: Prompt template, system prompt, instruction blob
 
 
 **Generation Barrier**:
