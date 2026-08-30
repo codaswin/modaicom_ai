@@ -150,6 +150,7 @@ button {
 
 .context-panel__message {
   font-size: 13px;
+}
 
 .generation {
   margin-top: 0.75rem;
@@ -190,4 +191,56 @@ button {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.4rem;
+}
+
+.controls {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid #ded9ef;
+  border-radius: 10px;
+}
+
+.controls__legend {
+  padding: 0 4px;
+  color: #2d235e;
+  font-size: 12px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.controls__row {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.controls__label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.controls__select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #cdc6e6;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+}
+
+.controls__select:focus-visible {
+  outline: 3px solid #b9aaff;
+  outline-offset: 1px;
+}
+
+.controls__caption,
+.controls__hint {
+  margin: 0;
+  color: #665d80;
+  font-size: 12px;
+  line-height: 1.4;
 }

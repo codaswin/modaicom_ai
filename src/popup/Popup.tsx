@@ -5,7 +5,18 @@ import { requestPageInteractionContext } from '../features/linkedin-context/extr
 import { isInteractionExtractionResult, type InteractionExtractionResult, type LinkedInInteractionContext } from '../features/linkedin-context/interactionContext'
 import type { ExtractedPostContext } from '../features/linkedin-context/extractPostContext'
 import { contextToGenerationRequest } from '../features/generation/generationRequest'
+import {
+  DEFAULT_GENERATION_PREFERENCES,
+  INTENTS,
+  LENGTHS,
+  TONES,
+  isIntent,
+  isResponseLength,
+  isTone,
+  type GenerationPreferences,
+} from '../features/generation/preferences'
 import { isRetryableGenerationError, type GenerationErrorKind } from '../features/generation/types'
+import { readPreferences, writePreferences } from './preferencesStore'
 import { isSupportedFeedUrl } from '../features/linkedin-context/routes'
 import { GENERATION_PROTOCOL_VERSION } from '../shared/protocol'
 import { RELAY_VERSION } from '../shared/relay'
@@ -131,7 +142,75 @@ function DraftView({ text, onRegenerate }: { text: string; onRegenerate: () => v
   )
 }
 
-function GenerationPanel({ context, status, gen }: { context: LinkedInInteractionContext; status: ProviderStatus | null; gen: UseGeneration }) {
+type UsePreferences = { prefs: GenerationPreferences; update: (next: GenerationPreferences) => void }
+
+function usePreferences(): UsePreferences {
+  const [prefs, setPrefs] = useState<GenerationPreferences>(DEFAULT_GENERATION_PREFERENCES)
+  useEffect(() => {
+    let cancelled = false
+    void readPreferences().then((loaded) => {
+      if (!cancelled) setPrefs(loaded)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  const update = useCallback((next: GenerationPreferences) => {
+    setPrefs(next)
+    void writePreferences(next)
+  }, [])
+  return { prefs, update }
+}
+
+const LENGTH_CAPTION_ID = 'modaicom-length-caption'
+
+function ResponseControls({ prefs, update }: UsePreferences) {
+  return (
+    <fieldset className="controls">
+      <legend className="controls__legend">Response controls</legend>
+      <div className="controls__row">
+        <label className="controls__label" htmlFor="modaicom-tone">Tone</label>
+        <select
+          id="modaicom-tone"
+          className="controls__select"
+          value={prefs.tone}
+          onChange={(e) => { if (isTone(e.target.value)) update({ ...prefs, tone: e.target.value }) }}
+        >
+          {TONES.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
+        </select>
+      </div>
+      <div className="controls__row">
+        <label className="controls__label" htmlFor="modaicom-intent">Intent</label>
+        <select
+          id="modaicom-intent"
+          className="controls__select"
+          value={prefs.intent}
+          onChange={(e) => { if (isIntent(e.target.value)) update({ ...prefs, intent: e.target.value }) }}
+        >
+          {INTENTS.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
+        </select>
+      </div>
+      <div className="controls__row">
+        <label className="controls__label" htmlFor="modaicom-length">Length</label>
+        <select
+          id="modaicom-length"
+          className="controls__select"
+          value={prefs.length}
+          aria-describedby={LENGTH_CAPTION_ID}
+          onChange={(e) => { if (isResponseLength(e.target.value)) update({ ...prefs, length: e.target.value }) }}
+        >
+          {LENGTHS.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
+        </select>
+      </div>
+      <p id={LENGTH_CAPTION_ID} className="controls__caption">
+        Short = a quick reply · Medium = a substantive comment · Long = a developed point
+      </p>
+      <p className="controls__hint">These guide your draft — you can still edit it before posting.</p>
+    </fieldset>
+  )
+}
+
+function GenerationPanel({ context, status, gen, preferences }: { context: LinkedInInteractionContext; status: ProviderStatus | null; gen: UseGeneration; preferences: UsePreferences }) {
   const ready = Boolean(status?.configured && status?.consented)
   const request = contextToGenerationRequest(context)
   const run = () => gen.generate(request)
@@ -148,6 +227,7 @@ function GenerationPanel({ context, status, gen }: { context: LinkedInInteractio
   const { state } = gen
   return (
     <div className="generation">
+      <ResponseControls prefs={preferences.prefs} update={preferences.update} />
       {state.phase === 'idle' && <button className="generation__go" onClick={run}>Generate reply</button>}
       {state.phase === 'generating' && (
         <><p className="generation__hint" role="status">Drafting…</p><button className="retry-button" onClick={gen.cancel}>Stop</button></>
@@ -172,6 +252,7 @@ export function Popup() {
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null)
   const gen = useGeneration()
   const { reset: resetGeneration } = gen
+  const preferences = usePreferences()
 
   const readActiveUrl = async () => {
     try {
@@ -242,7 +323,7 @@ export function Popup() {
         {context.kind === 'context-loading' ? <p className="context-panel__message">Reading LinkedIn context…</p> :
           context.kind === 'success' ? <>
             <InteractionView context={context.context} />
-            <GenerationPanel context={context.context} status={providerStatus} gen={gen} />
+            <GenerationPanel context={context.context} status={providerStatus} gen={gen} preferences={preferences} />
           </> :
           <><p className="context-panel__message">{showNeutralFeed ? 'Select a LinkedIn post to continue.' : contextMessages[context.kind]}</p>{canRetryContext ? <ActionButton label="Retry" onClick={load} /> : null}</>}
       </section> : null}

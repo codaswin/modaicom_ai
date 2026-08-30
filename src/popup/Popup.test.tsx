@@ -9,6 +9,8 @@ const tabsSendMessage = vi.fn()
 const sendMessage = vi.fn()
 const connect = vi.fn()
 const openOptionsPage = vi.fn()
+const storageGet = vi.fn()
+const storageSet = vi.fn()
 
 type FakePort = {
   postMessage: ReturnType<typeof vi.fn>
@@ -42,9 +44,14 @@ describe('Popup', () => {
     sendMessage.mockReset()
     connect.mockReset()
     openOptionsPage.mockReset()
+    storageGet.mockReset()
+    storageSet.mockReset()
+    storageGet.mockResolvedValue({})
+    storageSet.mockResolvedValue(undefined)
     vi.stubGlobal('chrome', {
       tabs: { query, sendMessage: tabsSendMessage },
       runtime: { sendMessage, connect, openOptionsPage, id: 'modaicom-test' },
+      storage: { local: { get: storageGet, set: storageSet } },
     })
   })
 
@@ -246,5 +253,79 @@ describe('Popup', () => {
 
     expect(await screen.findByText(/rate-limiting requests/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  describe('Response Controls', () => {
+    async function renderReady() {
+      query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example' }])
+      sendMessage.mockImplementation(async (msg: { type: string }) =>
+        msg.type === 'GET_PROVIDER_STATUS' ? READY_STATUS : null,
+      )
+      tabsSendMessage.mockResolvedValue(POST_RESULT)
+      render(<Popup />)
+      await screen.findByText('A useful post.')
+    }
+
+    it('renders Tone / Intent / Length selects grouped in a labelled fieldset', async () => {
+      await renderReady()
+
+      const group = screen.getByRole('group', { name: 'Response controls' })
+      expect(group).toBeInTheDocument()
+
+      const tone = screen.getByRole('combobox', { name: 'Tone' })
+      const intent = screen.getByRole('combobox', { name: 'Intent' })
+      const length = screen.getByRole('combobox', { name: 'Length' })
+
+      expect([...tone.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
+        'Professional',
+        'Friendly',
+        'Confident',
+        'Thoughtful',
+      ])
+      expect([...intent.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
+        'Support',
+        'Add insight',
+        'Ask a question',
+        'Answer',
+        'Disagree',
+        'Congratulate',
+      ])
+      expect([...length.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Short', 'Medium', 'Long'])
+
+      expect(length).toHaveAccessibleDescription(/Short = a quick reply/)
+      expect(screen.getAllByText(/you can still edit it/)).toHaveLength(1)
+    })
+
+    it('defaults to Professional / Add insight / Medium when nothing is stored', async () => {
+      await renderReady()
+
+      expect(screen.getByRole('combobox', { name: 'Tone' })).toHaveValue('professional')
+      expect(screen.getByRole('combobox', { name: 'Intent' })).toHaveValue('add-insight')
+      expect(screen.getByRole('combobox', { name: 'Length' })).toHaveValue('medium')
+    })
+
+    it('reflects a previously stored selection on mount', async () => {
+      storageGet.mockResolvedValue({
+        'modaicom.generation.preferences': { tone: 'friendly', intent: 'disagree', length: 'long' },
+      })
+      await renderReady()
+
+      expect(screen.getByRole('combobox', { name: 'Tone' })).toHaveValue('friendly')
+      expect(screen.getByRole('combobox', { name: 'Intent' })).toHaveValue('disagree')
+      expect(screen.getByRole('combobox', { name: 'Length' })).toHaveValue('long')
+    })
+
+    it('persists a changed control and leaves the other two untouched', async () => {
+      const user = userEvent.setup()
+      await renderReady()
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Tone' }), 'confident')
+
+      expect(storageSet).toHaveBeenLastCalledWith({
+        'modaicom.generation.preferences': { tone: 'confident', intent: 'add-insight', length: 'medium' },
+      })
+      expect(screen.getByRole('combobox', { name: 'Intent' })).toHaveValue('add-insight')
+      expect(screen.getByRole('combobox', { name: 'Length' })).toHaveValue('medium')
+    })
   })
 })
