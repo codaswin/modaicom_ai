@@ -274,11 +274,12 @@ Existing file. Covers:
 
 ### Seam 4 — `src/security.bundle.test.ts` (existing, one added assertion)
 
-The built content-script bundle contains none of the Tone / Intent instruction
-strings.
+The built content-script bundle contains none of the Tone / Intent / Length
+instruction strings.
 
-No new manual smoke-test document; a short Phase 6 section is added to the
-existing manual smoke-test notes. The behaviour is fully unit-covered.
+A `docs/testing/phase-6-manual-smoke-test.md` following the per-phase convention
+of phases 3–5 (render / default / isolation / persistence / keyboard / boundary
+checklist). The behaviour is otherwise fully unit-covered.
 
 ## Out of Scope
 

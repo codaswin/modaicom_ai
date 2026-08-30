@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { detectCurrentPage, type DetectionResult } from '../features/linkedin-detection/detectCurrentPage'
 import { requestPageInteractionContext } from '../features/linkedin-context/extractInteractionContext'
@@ -10,16 +10,13 @@ import {
   INTENTS,
   LENGTHS,
   TONES,
-  isIntent,
-  isResponseLength,
-  isTone,
   type GenerationPreferences,
 } from '../features/generation/preferences'
 import { isRetryableGenerationError, type GenerationErrorKind } from '../features/generation/types'
-import { readPreferences, writePreferences } from './preferencesStore'
 import { isSupportedFeedUrl } from '../features/linkedin-context/routes'
 import { GENERATION_PROTOCOL_VERSION } from '../shared/protocol'
 import { RELAY_VERSION } from '../shared/relay'
+import { readPreferences, writePreferences } from './preferencesStore'
 import { useGeneration, type UseGeneration } from './useGeneration'
 import './popup.css'
 
@@ -146,16 +143,19 @@ type UsePreferences = { prefs: GenerationPreferences; update: (next: GenerationP
 
 function usePreferences(): UsePreferences {
   const [prefs, setPrefs] = useState<GenerationPreferences>(DEFAULT_GENERATION_PREFERENCES)
+  // A user change before the stored value loads must win over the late load.
+  const touched = useRef(false)
   useEffect(() => {
     let cancelled = false
     void readPreferences().then((loaded) => {
-      if (!cancelled) setPrefs(loaded)
+      if (!cancelled && !touched.current) setPrefs(loaded)
     })
     return () => {
       cancelled = true
     }
   }, [])
   const update = useCallback((next: GenerationPreferences) => {
+    touched.current = true
     setPrefs(next)
     void writePreferences(next)
   }, [])
@@ -164,44 +164,65 @@ function usePreferences(): UsePreferences {
 
 const LENGTH_CAPTION_ID = 'modaicom-length-caption'
 
+// The <select> only ever renders ids from `rows`, so `e.target.value` is always
+// one of them; the cast is sound and keeps one code path per control.
+function ControlSelect<Id extends string>({
+  id,
+  label,
+  rows,
+  value,
+  describedBy,
+  onSelect,
+}: {
+  id: string
+  label: string
+  rows: readonly { id: Id; label: string }[]
+  value: Id
+  describedBy?: string
+  onSelect: (next: Id) => void
+}) {
+  return (
+    <div className="controls__row">
+      <label className="controls__label" htmlFor={id}>{label}</label>
+      <select
+        id={id}
+        className="controls__select"
+        value={value}
+        aria-describedby={describedBy}
+        onChange={(e) => onSelect(e.target.value as Id)}
+      >
+        {rows.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
+      </select>
+    </div>
+  )
+}
+
 function ResponseControls({ prefs, update }: UsePreferences) {
   return (
     <fieldset className="controls">
       <legend className="controls__legend">Response controls</legend>
-      <div className="controls__row">
-        <label className="controls__label" htmlFor="modaicom-tone">Tone</label>
-        <select
-          id="modaicom-tone"
-          className="controls__select"
-          value={prefs.tone}
-          onChange={(e) => { if (isTone(e.target.value)) update({ ...prefs, tone: e.target.value }) }}
-        >
-          {TONES.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
-        </select>
-      </div>
-      <div className="controls__row">
-        <label className="controls__label" htmlFor="modaicom-intent">Intent</label>
-        <select
-          id="modaicom-intent"
-          className="controls__select"
-          value={prefs.intent}
-          onChange={(e) => { if (isIntent(e.target.value)) update({ ...prefs, intent: e.target.value }) }}
-        >
-          {INTENTS.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
-        </select>
-      </div>
-      <div className="controls__row">
-        <label className="controls__label" htmlFor="modaicom-length">Length</label>
-        <select
-          id="modaicom-length"
-          className="controls__select"
-          value={prefs.length}
-          aria-describedby={LENGTH_CAPTION_ID}
-          onChange={(e) => { if (isResponseLength(e.target.value)) update({ ...prefs, length: e.target.value }) }}
-        >
-          {LENGTHS.map((row) => <option key={row.id} value={row.id}>{row.label}</option>)}
-        </select>
-      </div>
+      <ControlSelect
+        id="modaicom-tone"
+        label="Tone"
+        rows={TONES}
+        value={prefs.tone}
+        onSelect={(tone) => update({ ...prefs, tone })}
+      />
+      <ControlSelect
+        id="modaicom-intent"
+        label="Intent"
+        rows={INTENTS}
+        value={prefs.intent}
+        onSelect={(intent) => update({ ...prefs, intent })}
+      />
+      <ControlSelect
+        id="modaicom-length"
+        label="Length"
+        rows={LENGTHS}
+        value={prefs.length}
+        describedBy={LENGTH_CAPTION_ID}
+        onSelect={(length) => update({ ...prefs, length })}
+      />
       <p id={LENGTH_CAPTION_ID} className="controls__caption">
         Short = a quick reply · Medium = a substantive comment · Long = a developed point
       </p>
@@ -210,7 +231,8 @@ function ResponseControls({ prefs, update }: UsePreferences) {
   )
 }
 
-function GenerationPanel({ context, status, gen, preferences }: { context: LinkedInInteractionContext; status: ProviderStatus | null; gen: UseGeneration; preferences: UsePreferences }) {
+function GenerationPanel({ context, status, gen }: { context: LinkedInInteractionContext; status: ProviderStatus | null; gen: UseGeneration }) {
+  const preferences = usePreferences()
   const ready = Boolean(status?.configured && status?.consented)
   const request = contextToGenerationRequest(context)
   const run = () => gen.generate(request)
@@ -252,7 +274,6 @@ export function Popup() {
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null)
   const gen = useGeneration()
   const { reset: resetGeneration } = gen
-  const preferences = usePreferences()
 
   const readActiveUrl = async () => {
     try {
@@ -323,7 +344,7 @@ export function Popup() {
         {context.kind === 'context-loading' ? <p className="context-panel__message">Reading LinkedIn context…</p> :
           context.kind === 'success' ? <>
             <InteractionView context={context.context} />
-            <GenerationPanel context={context.context} status={providerStatus} gen={gen} preferences={preferences} />
+            <GenerationPanel context={context.context} status={providerStatus} gen={gen} />
           </> :
           <><p className="context-panel__message">{showNeutralFeed ? 'Select a LinkedIn post to continue.' : contextMessages[context.kind]}</p>{canRetryContext ? <ActionButton label="Retry" onClick={load} /> : null}</>}
       </section> : null}

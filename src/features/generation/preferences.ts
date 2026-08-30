@@ -76,19 +76,19 @@ export const LENGTHS = [
     id: 'short',
     label: 'Short',
     instruction: 'Keep the response to roughly one or two sentences.',
-    approxTarget: 'roughly 1 to 2 sentences',
+    approxTarget: 'roughly 1–2 sentences',
   },
   {
     id: 'medium',
     label: 'Medium',
     instruction: 'Keep the response to roughly two to four sentences.',
-    approxTarget: 'roughly 2 to 4 sentences',
+    approxTarget: 'roughly 2–4 sentences',
   },
   {
     id: 'long',
     label: 'Long',
     instruction: 'Keep the response to roughly four to six sentences; still a comment, not an essay.',
-    approxTarget: 'roughly 4 to 6 sentences; still a comment, not an essay',
+    approxTarget: 'roughly 4–6 sentences; still a comment, not an essay',
   },
 ] as const
 
@@ -110,16 +110,14 @@ export const DEFAULT_GENERATION_PREFERENCES: GenerationPreferences = {
   length: 'medium',
 }
 
-const TONE_IDS: readonly string[] = TONES.map((row) => row.id)
-const INTENT_IDS: readonly string[] = INTENTS.map((row) => row.id)
-const LENGTH_IDS: readonly string[] = LENGTHS.map((row) => row.id)
+function idGuard<Id extends string>(rows: readonly { id: Id }[]): (value: unknown) => value is Id {
+  const ids = new Set<string>(rows.map((row) => row.id))
+  return (value: unknown): value is Id => typeof value === 'string' && ids.has(value)
+}
 
-export const isTone = (value: unknown): value is Tone =>
-  typeof value === 'string' && TONE_IDS.includes(value)
-export const isIntent = (value: unknown): value is Intent =>
-  typeof value === 'string' && INTENT_IDS.includes(value)
-export const isResponseLength = (value: unknown): value is ResponseLength =>
-  typeof value === 'string' && LENGTH_IDS.includes(value)
+export const isTone = idGuard(TONES)
+export const isIntent = idGuard(INTENTS)
+export const isResponseLength = idGuard(LENGTHS)
 
 // Strict: a non-null object with exactly `tone`, `intent`, `length`, each a known
 // id. Extra keys are rejected, not stripped — mirrors `isGenerationRequest`.

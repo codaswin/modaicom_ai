@@ -41,6 +41,12 @@ describe('Response Controls registries', () => {
     }
   })
 
+  it('every Length row carries a non-empty approxTarget for Phase 7 prompt assembly', () => {
+    for (const row of LENGTHS) {
+      expect(row.approxTarget.trim().length).toBeGreaterThan(0)
+    }
+  })
+
   it('has the agreed v1 vocabulary', () => {
     expect(TONES.map((r) => r.id)).toEqual(['professional', 'friendly', 'confident', 'thoughtful'])
     expect(INTENTS.map((r) => r.id)).toEqual([

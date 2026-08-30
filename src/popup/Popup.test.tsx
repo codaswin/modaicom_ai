@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -293,7 +293,7 @@ describe('Popup', () => {
       expect([...length.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Short', 'Medium', 'Long'])
 
       expect(length).toHaveAccessibleDescription(/Short = a quick reply/)
-      expect(screen.getAllByText(/you can still edit it/)).toHaveLength(1)
+      expect(screen.getByText(/you can still edit it/)).toBeInTheDocument()
     })
 
     it('defaults to Professional / Add insight / Medium when nothing is stored', async () => {
@@ -310,9 +310,22 @@ describe('Popup', () => {
       })
       await renderReady()
 
-      expect(screen.getByRole('combobox', { name: 'Tone' })).toHaveValue('friendly')
+      await waitFor(() => expect(screen.getByRole('combobox', { name: 'Tone' })).toHaveValue('friendly'))
       expect(screen.getByRole('combobox', { name: 'Intent' })).toHaveValue('disagree')
       expect(screen.getByRole('combobox', { name: 'Length' })).toHaveValue('long')
+    })
+
+    it('keeps a change made before the stored value has loaded', async () => {
+      let resolveGet!: (value: unknown) => void
+      storageGet.mockReturnValue(new Promise((res) => { resolveGet = res }))
+      const user = userEvent.setup()
+      await renderReady()
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Tone' }), 'confident')
+      resolveGet({ 'modaicom.generation.preferences': { tone: 'friendly', intent: 'disagree', length: 'long' } })
+      await waitFor(() => expect(storageSet).toHaveBeenCalled())
+
+      expect(screen.getByRole('combobox', { name: 'Tone' })).toHaveValue('confident')
     })
 
     it('persists a changed control and leaves the other two untouched', async () => {
