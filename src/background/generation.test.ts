@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { runGenerationForTest } from './generation'
+import { handleOneShotForTest, isExtensionPage, runGenerationForTest } from './generation'
 
 const store = new Map<string, unknown>()
 const permissionGranted = { value: true }
@@ -101,5 +101,57 @@ describe('service-worker generation orchestrator — happy path', () => {
   it('surfaces provider errors as typed kinds', async () => {
     fetchMock.mockResolvedValue(new Response('{}', { status: 401 }))
     await expect(run()).resolves.toEqual({ ok: false, error: { kind: 'authentication-failed' } })
+  })
+})
+
+describe('one-shot sender authorisation', () => {
+  const EXT_ORIGIN = `chrome-extension://ext`
+
+  it('accepts the popup and the options page (options opens in a tab)', () => {
+    expect(isExtensionPage({ id: 'ext', origin: EXT_ORIGIN } as chrome.runtime.MessageSender)).toBe(true)
+    // options page: opened in a real tab, so sender.tab is set — origin is what matters
+    expect(
+      isExtensionPage({
+        id: 'ext',
+        origin: EXT_ORIGIN,
+        url: `${EXT_ORIGIN}/src/options/index.html`,
+        tab: { id: 9 } as chrome.tabs.Tab,
+      } as chrome.runtime.MessageSender),
+    ).toBe(true)
+  })
+
+  it('rejects a content script (web-page origin) and a foreign extension id', () => {
+    expect(
+      isExtensionPage({
+        id: 'ext',
+        origin: 'https://www.linkedin.com',
+        url: 'https://www.linkedin.com/feed/',
+        tab: { id: 9 } as chrome.tabs.Tab,
+      } as chrome.runtime.MessageSender),
+    ).toBe(false)
+    expect(isExtensionPage({ id: 'other', origin: EXT_ORIGIN } as chrome.runtime.MessageSender)).toBe(false)
+  })
+
+  it('GET_PROVIDER_STATUS from an extension page returns non-secret status', async () => {
+    vi.stubGlobal('chrome', {
+      runtime: { id: 'ext' },
+      storage: { local: { get: vi.fn(async () => ({})) } },
+    })
+    const reply = await handleOneShotForTest({ v: 1, type: 'GET_PROVIDER_STATUS' }, {
+      id: 'ext',
+      origin: 'chrome-extension://ext',
+    } as chrome.runtime.MessageSender)
+    expect(reply).toEqual({ configured: false, consented: false })
+  })
+
+  it('GET_PROVIDER_STATUS from a content script is ignored', async () => {
+    vi.stubGlobal('chrome', { runtime: { id: 'ext' } })
+    const reply = await handleOneShotForTest({ v: 1, type: 'GET_PROVIDER_STATUS' }, {
+      id: 'ext',
+      origin: 'https://www.linkedin.com',
+      url: 'https://www.linkedin.com/feed/',
+      tab: { id: 1 } as chrome.tabs.Tab,
+    } as chrome.runtime.MessageSender)
+    expect(reply).toBeUndefined()
   })
 })
