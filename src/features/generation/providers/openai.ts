@@ -25,6 +25,8 @@ export const openaiProvider: AIProvider = {
             { role: 'system', content: input.system },
             { role: 'user', content: input.user },
           ],
+          ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+          ...(opts.maxTokens !== undefined ? { max_tokens: opts.maxTokens } : {}),
         }),
         signal: opts.signal,
       })

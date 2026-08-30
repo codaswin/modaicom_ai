@@ -57,6 +57,24 @@ describe('openai provider — request', () => {
     await generate({ baseUrl: 'https://api.groq.com/openai/v1/' })
     expect(seenUrl).toBe('https://api.groq.com/openai/v1/chat/completions')
   })
+
+  it('includes temperature and max_tokens when supplied, omits them otherwise', async () => {
+    let seenInit: RequestInit = {}
+    stubFetch((_url, init) => {
+      seenInit = init
+      return jsonResponse({ choices: [{ message: { content: 'x' } }] })
+    })
+
+    await generate({ temperature: 0.6, maxTokens: 320 })
+    let body = JSON.parse(seenInit.body as string)
+    expect(body.temperature).toBe(0.6)
+    expect(body.max_tokens).toBe(320)
+
+    await generate()
+    body = JSON.parse(seenInit.body as string)
+    expect('temperature' in body).toBe(false)
+    expect('max_tokens' in body).toBe(false)
+  })
 })
 
 describe('openai provider — response', () => {
@@ -68,11 +86,20 @@ describe('openai provider — response', () => {
   it.each([
     ['non-JSON body', () => new Response('not json', { status: 200 })],
     ['missing content', () => jsonResponse({ choices: [{ message: {} }] })],
-    ['empty content', () => jsonResponse({ choices: [{ message: { content: '   ' } }] })],
+    ['empty content', () => jsonResponse({ choices: [{ message: { content: '' } }] })],
+    ['whitespace content', () => jsonResponse({ choices: [{ message: { content: '   ' } }] })],
     ['no choices', () => jsonResponse({ choices: [] })],
+    ['200 with an error body', () => jsonResponse({ error: { message: 'quota exceeded' } })],
   ])('maps %s to invalid-response', async (_label, impl) => {
     stubFetch(impl as () => Response)
     await expect(generate()).resolves.toEqual({ ok: false, error: { kind: 'invalid-response' } })
+  })
+
+  it('returns a truncated (finish_reason: length) response rather than erroring', async () => {
+    stubFetch(() =>
+      jsonResponse({ choices: [{ finish_reason: 'length', message: { content: 'A partial draft that was cut' } }] }),
+    )
+    await expect(generate()).resolves.toEqual({ ok: true, text: 'A partial draft that was cut' })
   })
 })
 

@@ -25,6 +25,11 @@ export type GenerateOptions = {
   apiKey: string
   baseUrl?: string
   signal: AbortSignal
+  // Provider-neutral sampling knobs (ADR-0010). `maxTokens` is a cost / runaway
+  // backstop, not the length mechanism (that is the prompt). A provider maps
+  // these onto its own field names.
+  temperature?: number
+  maxTokens?: number
 }
 
 export type GenerationResult = { ok: true; text: string } | { ok: false; error: GenerationError }

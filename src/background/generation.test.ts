@@ -146,6 +146,21 @@ describe('service-worker generation orchestrator — happy path', () => {
     expect(system).not.toContain('1–2 sentences')
   })
 
+  it('sets temperature 0.6 and a length-derived max_tokens on the outbound request', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify(OK_BODY), { status: 200, headers: { 'content-type': 'application/json' } }),
+    )
+    await run(REQUEST, { tone: 'friendly', intent: 'support', length: 'short' })
+    let body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string)
+    expect(body.temperature).toBe(0.6)
+    const shortTokens = body.max_tokens as number
+
+    fetchMock.mockClear()
+    await run(REQUEST, { tone: 'friendly', intent: 'support', length: 'long' })
+    body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string)
+    expect(body.max_tokens).toBeGreaterThan(shortTokens)
+  })
+
   it('never writes preferences to the console', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)

@@ -46,7 +46,7 @@ Load the generated `dist` directory through Chrome's **Load unpacked** option.
 
 ## Manual smoke test
 
-Validation records: [Phase 3](docs/testing/phase-3-manual-smoke-test.md), [Phase 4](docs/testing/phase-4-manual-smoke-test.md), [Phase 5](docs/testing/phase-5-manual-smoke-test.md), [Phase 6](docs/testing/phase-6-manual-smoke-test.md). Selector reference and re-verification snippet: [docs/testing/linkedin-selectors.md](docs/testing/linkedin-selectors.md).
+Validation records: [Phase 3](docs/testing/phase-3-manual-smoke-test.md), [Phase 4](docs/testing/phase-4-manual-smoke-test.md), [Phase 5](docs/testing/phase-5-manual-smoke-test.md), [Phase 6](docs/testing/phase-6-manual-smoke-test.md), [Phase 7](docs/testing/phase-7-manual-smoke-test.md). Selector reference and re-verification snippet: [docs/testing/linkedin-selectors.md](docs/testing/linkedin-selectors.md).
 
 1. Run `npm run check` and confirm it succeeds.
 2. Load the generated `dist` directory as an unpacked Chrome extension.

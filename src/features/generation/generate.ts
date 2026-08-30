@@ -1,8 +1,17 @@
 import type { GenerationRequest } from './generationRequest'
-import { preferencesToInstructions, type GenerationPreferences } from './preferences'
+import { preferencesToInstructions, type GenerationPreferences, type ResponseLength } from './preferences'
 import { buildGenerationInput } from './prompt'
 import { getProvider } from './providers/registry'
 import type { GenerationResult } from './types'
+
+// Lower than the provider default (~1.0), so the tone/intent/length instructions
+// dominate the run-to-run variance — while leaving Regenerate a genuinely
+// different draft. ADR-0010.
+const TEMPERATURE = 0.6
+
+// Cost / runaway backstop only — roughly 2x each length's sentence target, so
+// normal output never truncates. Not the length mechanism (the prompt is).
+const MAX_TOKENS_BY_LENGTH: Record<ResponseLength, number> = { short: 160, medium: 320, long: 640 }
 
 // Provider-neutral orchestration: request + preferences -> input -> provider
 // call. Knows the generation layer and the provider registry; knows nothing
@@ -21,5 +30,7 @@ export async function runGeneration(
     apiKey: opts.apiKey,
     baseUrl: opts.baseUrl,
     signal: opts.signal,
+    temperature: TEMPERATURE,
+    maxTokens: MAX_TOKENS_BY_LENGTH[preferences.length],
   })
 }
