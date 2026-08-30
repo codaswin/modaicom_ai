@@ -1,4 +1,9 @@
 import { classifyLinkedInRoute } from './routes'
+import { FEED_CONTAINER_SELECTOR, FEED_POST_ROOT_SELECTOR, POST_ROOT_SELECTOR, ORIGINAL_BODY_SELECTORS, SDUI_EXPAND_CONTROL_SELECTOR, SDUI_FEED_POST_ROOT_SELECTOR, findOriginalBody, isValidatedPostRoot, stablePostIdentity } from './postAdapter'
+
+// Kept in sync with RELAY_VERSION in ../../shared/relay (imported literally here
+// to avoid a module cycle with the relay guard).
+const PAGE_EXTRACTION_MESSAGE = { version: 1, type: 'REQUEST_PAGE_EXTRACTION' } as const
 
 export type ExtractedPostContext = {
   authorDisplayName: string
@@ -44,14 +49,15 @@ export function extractPostContextInPage(
   }
 
   if (isFeedRoute && root.nodeType === Node.DOCUMENT_NODE) return { kind: 'unsupported-surface' }
+  if (root.nodeType === Node.ELEMENT_NODE && !isValidatedPostRoot(root as Element, isFeedRoute)) return { kind: 'post-not-found' }
 
   const candidateSelector = isFeedRoute
-    ? 'article[data-urn^="urn:li:activity:"], article[data-id^="urn:li:activity:"]'
-    : 'article[data-urn], article[data-id], [data-urn^="urn:li:activity:"], [data-id^="urn:li:activity:"]'
+    ? FEED_POST_ROOT_SELECTOR
+    : POST_ROOT_SELECTOR
   const isElementRoot = root.nodeType === Node.ELEMENT_NODE
   const pageDocument = root.nodeType === Node.DOCUMENT_NODE ? (root as Document) : root.ownerDocument
   const candidateRoot = isFeedRoute
-    ? (isElementRoot ? root : pageDocument?.querySelector<HTMLElement>('main [role="feed"]'))
+    ? (isElementRoot ? root : pageDocument?.querySelector<HTMLElement>(FEED_CONTAINER_SELECTOR))
     : root
   const markedCandidates = isElementRoot
     ? [root as HTMLElement]
@@ -80,13 +86,7 @@ export function extractPostContextInPage(
     element.closest(candidateSelector) === candidate ||
     (candidate.matches('article') && !element.closest(candidateSelector))
 
-  const bodySelectors = [
-    '[data-testid="post-body"]',
-    '[data-testid="expandable-text-box"]',
-    '[data-test-id="feed-shared-update-v2__description"]',
-    '.feed-shared-update-v2__description',
-    '.feed-shared-inline-show-more-text',
-  ]
+  const bodySelectors = ORIGINAL_BODY_SELECTORS
 
   const findElement = (selectors: string[]) => {
     for (const selector of selectors) {
@@ -127,6 +127,11 @@ export function extractPostContextInPage(
         }
         if (child.nodeType === Node.ELEMENT_NODE) {
           const childElement = child as Element
+          // The SDUI feed renders its "… more" / "… less" expander as a button
+          // inside the post body; it is chrome, not authored text.
+          if (childElement.matches(SDUI_EXPAND_CONTROL_SELECTOR)) {
+            return
+          }
           const isBlock = blockTags.has(childElement.tagName)
           if (isBlock && rawText && !rawText.endsWith('\n')) {
             rawText += '\n'
@@ -149,13 +154,18 @@ export function extractPostContextInPage(
       .trim()
   }
 
-  const authoredBody = findElement(bodySelectors)
+  const authoredBody = findOriginalBody(candidate) ?? findElement(bodySelectors)
   const hasSeeMore = authoredBody
     ? Array.from(
         authoredBody.querySelectorAll<HTMLElement>(
-          'button, a, [role="button"]',
+          `button, a, [role="button"], ${SDUI_EXPAND_CONTROL_SELECTOR}`,
         ),
-      ).some((control) => /\bsee\s+more\b/i.test(control.textContent?.trim() ?? ''))
+      ).some((control) => {
+        const label = control.textContent?.trim() ?? ''
+        if (/\bsee\s+more\b/i.test(label)) return true
+        // SDUI feed renders a "… more" button inside a collapsed post body.
+        return control.matches(SDUI_EXPAND_CONTROL_SELECTOR) && /(^|\W)more$/i.test(label)
+      })
     : false
   if (hasSeeMore) {
     return { kind: 'collapsed-post' }
@@ -169,11 +179,34 @@ export function extractPostContextInPage(
     return text || undefined
   }
 
-  const authorDisplayName = textFrom([
+  const sduiAuthorName = () => {
+    if (!candidate.matches(SDUI_FEED_POST_ROOT_SELECTOR)) return undefined
+    const apostrophe = "['’‘ʼ]"
+    const viewProfile = new RegExp(`^View\\s+(.+?)${apostrophe}s\\s+(?:profile|photo|graphic link)$`, 'i')
+    const profilePhoto = new RegExp(`^(.+?)${apostrophe}s\\s+(?:profile|graphic link)$`, 'i')
+    for (const image of Array.from(candidate.querySelectorAll<HTMLElement>('img[alt]'))) {
+      const alt = image.getAttribute('alt')?.trim() ?? ''
+      const named = alt.match(viewProfile) ?? alt.match(profilePhoto)
+      if (named?.[1]) return named[1].trim()
+    }
+    const actorLink = Array.from(
+      candidate.querySelectorAll<HTMLAnchorElement>('a[href*="/in/"], a[href*="/company/"], a[href*="/school/"]'),
+    ).find((link) => (link.textContent ?? '').trim().length > 0)
+    if (!actorLink) return undefined
+    const cleaned = (normalizeText(actorLink).split('\n')[0] ?? '')
+      .replace(/\s*[•·].*$/, '')
+      .replace(/\s+\d(?:st|nd|rd|th)\+?$/i, '')
+      .trim()
+    return cleaned || undefined
+  }
+
+  const authorDisplayName = (textFrom([
     '[data-testid="actor-name"]',
     '[data-test-id="feed-shared-actor__name"]',
+    '.update-components-actor__name',
+    '[data-view-name="feed-actor-name"]',
     '[aria-label^="By "]',
-  ])?.replace(/^By\s+/i, '')
+  ]) ?? sduiAuthorName())?.replace(/^By\s+/i, '')
   if (!authorDisplayName) {
     return { kind: 'author-not-found' }
   }
@@ -195,8 +228,7 @@ export function extractPostContextInPage(
     '[data-test-id="feed-shared-actor__sub-description"]',
   ])
 
-  const explicitIdentifier =
-    candidate.getAttribute('data-urn') ?? candidate.getAttribute('data-id')
+  const explicitIdentifier = stablePostIdentity(candidate)
   const stablePostIdentifier =
     explicitIdentifier?.startsWith('urn:li:') && explicitIdentifier.trim()
       ? explicitIdentifier.trim()
@@ -271,11 +303,11 @@ export async function extractCurrentPostContext(): Promise<PostExtractionResult>
       return { kind: 'unexpected-error' }
     }
 
-    const [injection] = await chrome.scripting.executeScript({
-      target: { tabId: activeTab.id },
-      func: extractPostContextInPage,
-    })
-    const runtimeResult: unknown = injection?.result
+    // Ask the persistent content script to run the extractor in the page. A
+    // `chrome.scripting.executeScript({ func })` call would serialize the
+    // function and lose its module scope, so it could never resolve the adapter
+    // helpers it depends on.
+    const runtimeResult: unknown = await chrome.tabs.sendMessage(activeTab.id, PAGE_EXTRACTION_MESSAGE)
     return isPostExtractionResult(runtimeResult)
       ? runtimeResult
       : { kind: 'unexpected-error' }

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   extractCurrentPostContext,
   extractPostContextFromDocument,
+  extractPostContextFromElementInPage,
   type PostExtractionResult,
 } from './extractPostContext'
 
@@ -17,6 +18,55 @@ function extract(markup: string, url?: string): PostExtractionResult {
 }
 
 describe('extractPostContextFromDocument', () => {
+  it('extracts the current div-based activity root used by inline targeting', () => {
+    const target = page(`
+      <div class="feed-shared-update-v2" data-urn="urn:li:activity:456">
+        <div class="feed-shared-update-v2__description">Current post text.</div>
+        <div data-testid="actor-name">Ada Lovelace</div>
+      </div>
+    `, 'https://www.linkedin.com/feed/update/urn:li:activity:456/')
+    const post = target.document.querySelector('.feed-shared-update-v2')
+    expect(post).not.toBeNull()
+    expect(extractPostContextFromElementInPage(post as Element, target.url)).toEqual({
+      kind: 'success',
+      context: {
+        authorDisplayName: 'Ada Lovelace',
+        originalAuthoredText: 'Current post text.',
+        stablePostIdentifier: 'urn:li:activity:456',
+      },
+    })
+  })
+
+
+  it('extracts a server-driven-UI home feed post from its list item', () => {
+    const target = page(
+      `
+      <main>
+        <div data-testid="mainFeed" role="list">
+          <div componentkey="expanded-xyz_MAIN_FEED">
+            <div role="listitem">
+              <img alt="View Ada Lovelace’s profile" />
+              <div data-testid="expandable-text-box">Feed post body.<button data-testid="expandable-text-button">… more</button></div>
+            </div>
+          </div>
+        </div>
+      </main>
+    `,
+      'https://www.linkedin.com/feed/',
+    )
+    const post = target.document.querySelector('[role="listitem"]') as Element
+    expect(extractPostContextFromElementInPage(post, target.url)).toEqual({ kind: 'collapsed-post' })
+
+    post.querySelector('[data-testid="expandable-text-button"]')!.remove()
+    expect(extractPostContextFromElementInPage(post, target.url)).toEqual({
+      kind: 'success',
+      context: {
+        authorDisplayName: 'Ada Lovelace',
+        originalAuthoredText: 'Feed post body.',
+      },
+    })
+  })
+
   it('extracts required fields and permitted optional metadata', () => {
     expect(
       extract(`
@@ -179,6 +229,14 @@ describe('extractPostContextFromDocument', () => {
     })
   })
 
+  it('extracts the current update-components author and body structure', () => {
+    expect(extract(`
+      <article class="feed-shared-update-v2" data-urn="urn:li:activity:current">
+        <span class="update-components-actor__name">Ada Lovelace</span>
+        <div class="update-components-text"><span>Current feed text.</span></div>
+      </article>`)).toMatchObject({ kind: 'success', context: { authorDisplayName: 'Ada Lovelace', originalAuthoredText: 'Current feed text.' } })
+  })
+
   it('never includes the URL in context', () => {
     const result = extract(
       '<article data-urn="urn:li:activity:123"><div data-testid="actor-name">Ada</div><div data-testid="post-body">Text</div></article>',
@@ -188,14 +246,14 @@ describe('extractPostContextFromDocument', () => {
 })
 describe('extractCurrentPostContext', () => {
   const query = vi.fn()
-  const executeScript = vi.fn()
+  const sendMessage = vi.fn()
 
   beforeEach(() => {
     query.mockReset()
-    executeScript.mockReset()
+    sendMessage.mockReset()
     vi.stubGlobal('chrome', {
-      tabs: { query },
-      scripting: { executeScript },
+      tabs: { query, sendMessage },
+      runtime: { id: 'modaicom-test' },
     })
     query.mockResolvedValue([{ id: 7 }])
   })
@@ -204,26 +262,40 @@ describe('extractCurrentPostContext', () => {
     vi.unstubAllGlobals()
   })
 
+  it('asks the page content script to extract the current post', async () => {
+    sendMessage.mockResolvedValue({
+      kind: 'success',
+      context: { authorDisplayName: 'Ada', originalAuthoredText: 'Text' },
+    })
+
+    await expect(extractCurrentPostContext()).resolves.toMatchObject({ kind: 'success' })
+    expect(sendMessage).toHaveBeenCalledWith(7, { version: 1, type: 'REQUEST_PAGE_EXTRACTION' })
+  })
+
   it.each([
     undefined,
-    [],
-    [{}],
-    [{ result: null }],
-    [{ result: { kind: 'unknown' } }],
-    [{ result: { kind: 'success', context: {} } }],
+    null,
+    {},
+    { kind: 'unknown' },
+    { kind: 'success', context: {} },
   ])('maps malformed runtime result %j to unexpected-error', async (runtimeResult) => {
-    executeScript.mockResolvedValue(
-      runtimeResult === undefined ? undefined : runtimeResult,
-    )
+    sendMessage.mockResolvedValue(runtimeResult)
 
     await expect(extractCurrentPostContext()).resolves.toEqual({
       kind: 'unexpected-error',
     })
   })
 
-  it('does not log when runtime extraction rejects', async () => {
+  it('maps a missing active tab id to unexpected-error', async () => {
+    query.mockResolvedValue([{}])
+
+    await expect(extractCurrentPostContext()).resolves.toEqual({ kind: 'unexpected-error' })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('does not log when the content script is unreachable', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    executeScript.mockRejectedValue(new Error('runtime failure'))
+    sendMessage.mockRejectedValue(new Error('Could not establish connection'))
 
     await expect(extractCurrentPostContext()).resolves.toEqual({
       kind: 'unexpected-error',

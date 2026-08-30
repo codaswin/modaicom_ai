@@ -5,15 +5,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Popup } from './Popup'
 
 const query = vi.fn()
-const executeScript = vi.fn()
+const tabsSendMessage = vi.fn()
 const sendMessage = vi.fn()
 
 describe('Popup', () => {
   beforeEach(() => {
     query.mockReset()
-    executeScript.mockReset()
+    tabsSendMessage.mockReset()
     sendMessage.mockReset()
-    vi.stubGlobal('chrome', { tabs: { query }, scripting: { executeScript }, runtime: { sendMessage } })
+    vi.stubGlobal('chrome', {
+      tabs: { query, sendMessage: tabsSendMessage },
+      runtime: { sendMessage, id: 'modaicom-test' },
+    })
   })
 
   afterEach(() => {
@@ -63,47 +66,40 @@ describe('Popup', () => {
 
   it('shows a read-only primary post context preview', async () => {
     query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example-activity-123' }])
-    executeScript.mockResolvedValue([
-      {
-        result: {
-          kind: 'success',
-          context: {
-            authorDisplayName: 'Ada Lovelace',
-            originalAuthoredText: 'A useful post.',
-          },
-        },
+    tabsSendMessage.mockResolvedValue({
+      kind: 'success',
+      context: {
+        authorDisplayName: 'Ada Lovelace',
+        originalAuthoredText: 'A useful post.',
       },
-    ])
+    })
 
     render(<Popup />)
 
     await screen.findByText('LinkedIn detected ✓')
     expect(await screen.findByText('A useful post.')).toBeInTheDocument()
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
+    expect(tabsSendMessage).toHaveBeenCalledWith(1, { version: 1, type: 'REQUEST_PAGE_EXTRACTION' })
   })
 
   it('tells the user to expand collapsed text and retries fresh extraction', async () => {
     const user = userEvent.setup()
     query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example-activity-123' }])
-    executeScript
-      .mockResolvedValueOnce([{ result: { kind: 'collapsed-post' } }])
-      .mockResolvedValueOnce([
-        {
-          result: {
-            kind: 'success',
-            context: {
-              authorDisplayName: 'Ada Lovelace',
-              originalAuthoredText: 'Expanded post.',
-            },
-          },
+    tabsSendMessage
+      .mockResolvedValueOnce({ kind: 'collapsed-post' })
+      .mockResolvedValueOnce({
+        kind: 'success',
+        context: {
+          authorDisplayName: 'Ada Lovelace',
+          originalAuthoredText: 'Expanded post.',
         },
-      ])
+      })
 
     render(<Popup />)
     await screen.findByText(/This post is collapsed/)
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     await screen.findByText('Expanded post.')
-    expect(executeScript).toHaveBeenCalledTimes(2)
+    expect(tabsSendMessage).toHaveBeenCalledTimes(2)
   })
 
   it('shows a neutral feed state without popup-driven selection', async () => {

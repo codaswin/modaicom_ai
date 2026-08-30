@@ -57,7 +57,7 @@ The Phase 3 validation record is maintained in [docs/testing/phase-3-manual-smok
 7. Confirm HTTP LinkedIn URLs, unsupported subdomains such as `learning.linkedin.com`, and lookalike domains such as `linkedin.com.example.com` are not detected.
 8. Simulate or encounter an unavailable active-tab URL and confirm the popup shows its error state without crashing; select **Retry** and confirm detection runs again.
 9. Open a supported individual LinkedIn post page and confirm the popup shows the author and full authored post text.
-10. On `/feed/` and a supported individual-post page, confirm an eligible comment composer receives one accessible inline `modaicom` trigger and unrelated editors receive none.
+10. On `/feed/`, open a post's comment section and confirm its comment composer receives one accessible inline `modaicom` trigger; on a supported individual-post page confirm the always-rendered composer receives one; confirm unrelated editors and reply composers receive none.
 11. Click the inline trigger and confirm the editor is not focused, read, or changed; reopen the popup and confirm the selected context or fixed failure copy appears.
 12. Confirm SPA route changes and editor rerenders remove orphaned triggers and unsupported routes contain no modaicom controls.
 13. Confirm a collapsed post shows the exact guidance to expand “see more” manually, then select **Retry** on an individual-post popup fallback.
@@ -79,7 +79,9 @@ Future phases may introduce targeted comment/reply extraction, a prompt engine, 
 
 ## Privacy and control
 
-Phase 3 uses exact LinkedIn host permissions and a static `document_idle` content script so an inline `modaicom` trigger can appear beside eligible comment composers while the popup is closed. Before an explicit click, the content script inspects only structural information needed to identify composers and owning posts; it does not read authored post/comment text or editor values. After a click, only the selected post’s typed plain context or failure is relayed through the service worker’s five-minute `chrome.storage.session` handoff. No URLs, HTML, editor text, raw exceptions, analytics, logging, network transmission, or long-term persistence are used. Extraction remains read-only: modaicom never clicks “see more,” inserts text, or publishes a comment or reply.
+Phase 3 uses exact LinkedIn host permissions and a static `document_idle` content script so an inline `modaicom` trigger can appear beside eligible comment composers while the popup is closed. Before an explicit click, the content script inspects only structural information needed to identify composers and owning posts; it does not read authored post/comment text or editor values. After a click, only the selected post’s typed plain context or failure is relayed through the service worker’s five-minute `chrome.storage.session` handoff. The popup’s individual-post fallback asks the same content script to extract, so the only permissions are `activeTab` and `storage`. No URLs, HTML, editor text, raw exceptions, analytics, logging, network transmission, or long-term persistence are used. Extraction remains read-only: modaicom never clicks “see more,” inserts text, or publishes a comment or reply.
+
+LinkedIn currently serves two markup regimes and both are recognised: the legacy `article` / `.feed-shared-update-v2` structure on individual `/posts/...` pages, and the newer server-driven UI on the home `/feed/` (obfuscated classes, no activity URN, `[data-testid="mainFeed"]` list items, a lazily mounted comment composer). See [ADR-0004](docs/adr/0004-linkedin-sdui-feed-and-content-script-extraction.md).
 
 ## Status
 

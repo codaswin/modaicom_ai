@@ -42,6 +42,10 @@ target/
 web-ext-artifacts/
 .chrome/
 chrome-profile/
+# CRXJS / Vite plugin dev-server working directory
+.crxjs/
+
+# Compiled package artifacts
 *.egg-info/
 *.whl
 *.class

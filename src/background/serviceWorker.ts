@@ -36,23 +36,24 @@ async function clearRelay(tabId: number, sessionId?: string, removeGeneration = 
   })
 }
 
-async function writeRelay(tabId: number, generation: number, sessionId: string, result: SessionRelayRecord['result']): Promise<void> {
-  await serializeTabOperation(tabId, async () => {
+async function writeRelay(tabId: number, generation: number, sessionId: string, result: SessionRelayRecord['result']): Promise<boolean> {
+  return serializeTabOperation(tabId, async () => {
     const now = Date.now()
     const generationStorageKey = generationKey(tabId)
     const generationValue = (await chrome.storage.session.get(generationStorageKey))[generationStorageKey]
     const existingGeneration = isGenerationRecord(generationValue) ? generationValue : undefined
     if (existingGeneration && existingGeneration.expiresAt <= now) await chrome.storage.session.remove(generationStorageKey)
-    if (existingGeneration && existingGeneration.expiresAt > now && existingGeneration.sessionId !== sessionId) return
-    if (existingGeneration && existingGeneration.expiresAt > now && generation <= existingGeneration.generation) return
+    if (existingGeneration && existingGeneration.expiresAt > now && existingGeneration.sessionId !== sessionId) return false
+    if (existingGeneration && existingGeneration.expiresAt > now && generation <= existingGeneration.generation) return false
     const key = relayKey(tabId)
     const existingValue = (await chrome.storage.session.get(key))[key]
     const existing = isSessionRelayRecord(existingValue) ? existingValue : undefined
     if (existing && existing.expiresAt <= now) await chrome.storage.session.remove(key)
-    if (existing && existing.expiresAt > now && existing.generation > generation) return
+    if (existing && existing.expiresAt > now && existing.generation > generation) return false
     const record: SessionRelayRecord = { version: RELAY_VERSION, result, createdAt: now, expiresAt: now + RELAY_TTL_MS, generation }
     const nextGeneration: GenerationRecord = { version: RELAY_VERSION, generation, counter: (existingGeneration?.counter ?? 0) + 1, sessionId, createdAt: now, expiresAt: now + RELAY_TTL_MS }
     await chrome.storage.session.set({ [key]: record, [generationStorageKey]: nextGeneration })
+    return true
   })
 }
 
@@ -84,8 +85,8 @@ async function handleRelayMessage(message: RelayMessage, sender: chrome.runtime.
   if (message.type === 'INLINE_EXTRACTION_RESULT') {
     const tabId = sender.tab?.id
     if (typeof tabId !== 'number') return { ok: false }
-    await writeRelay(tabId, message.generation, message.sessionId, message.result)
-    return { ok: true }
+    const accepted = await writeRelay(tabId, message.generation, message.sessionId, message.result)
+    return { ok: true, accepted }
   }
   if (message.type === 'CLEAR_RELAY') {
     const tabId = sender.tab?.id

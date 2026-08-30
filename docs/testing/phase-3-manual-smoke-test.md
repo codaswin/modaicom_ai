@@ -19,3 +19,20 @@ Required observations:
 - The popup displays the typed extracted context or fixed failure copy.
 - SPA route changes remove stale modaicom UI and unsupported routes contain none.
 - Teardown/reinitialization does not stack observers or history wrappers.
+
+## LinkedIn markup regimes
+
+As of 2026-08 LinkedIn serves two different frontends:
+
+- **Legacy** on individual `/posts/...` and `/feed/update/urn:li:activity:...` pages:
+  `article` / `.feed-shared-update-v2` roots with a `urn:li:activity:` identifier
+  and an always-rendered `.comments-comment-box` composer.
+- **Server-driven UI ("SDUI")** on the logged-in home `/feed/`: obfuscated class
+  names, **no activity URN in the DOM**, posts rendered as `[role="listitem"]`
+  inside `[data-testid="mainFeed"]`, post body in `[data-testid="expandable-text-box"]`,
+  and a `tiptap` comment composer that only mounts **after the user opens a
+  post's comment section**.
+
+Feed-surface smoke testing must therefore click **Comment** on a post first; the
+inline trigger appears next to the composer that opens, not on the collapsed
+post. An always-visible feed trigger is tracked as follow-up work.
