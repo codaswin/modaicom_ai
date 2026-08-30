@@ -23,7 +23,11 @@ and rebuilds the prompt so the selection reliably steers the model.
   the message boundary. An absent, malformed, or unknown-id `preferences` value
   returns a new typed error kind **`invalid-preferences`** and makes no provider
   call — never a silent fall back to the default (the Phase 6 grill decided a
-  message boundary rejects; storage reads still fall back).
+  message boundary rejects; storage reads still fall back). `invalid-preferences`
+  is **retryable** in the popup: the popup's stored triple is always a valid typed
+  value, so the error only occurs on transient protocol skew during an extension
+  update, where Retry after the reload works. (The grill said "Open settings", but
+  that points at the wrong surface — tone/intent/length are popup controls.)
 - **Mapping** (`preferencesToInstructions`) runs in `runGeneration`
   (`features/generation/generate.ts`), colocated with `buildGenerationInput`.
   `background/` stays thin: transport, sender auth, storage, validation.

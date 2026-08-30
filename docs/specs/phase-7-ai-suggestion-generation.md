@@ -114,8 +114,11 @@ Nothing is inserted or posted.
 - `TEST_PROVIDER` passes `DEFAULT_GENERATION_PREFERENCES` — still a minimal call,
   zero LinkedIn content.
 - `GenerationError` / `GenerationErrorKind` gain `invalid-preferences`; the popup
-  maps it to fixed copy and offers Open settings (not Retry — it is not
-  retryable).
+  maps it to fixed copy. It is marked **retryable**: the popup's stored triple is
+  always a valid typed value (validated on read, default fallback), so this only
+  fires on transient protocol skew during an extension update, where a Retry
+  after the reload works. ("Open settings" — the original plan — points at the
+  wrong place, since tone/intent/length are popup controls, not options.)
 
 ### Prompt construction
 
