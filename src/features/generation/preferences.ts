@@ -15,22 +15,26 @@ export const TONES = [
   {
     id: 'professional',
     label: 'Professional',
-    instruction: 'Write in a professional, polished tone. Avoid slang and exclamation marks.',
+    instruction:
+      'Use a businesslike register: complete sentences, no slang, no exclamation marks, no emoji. Courteous and measured.',
   },
   {
     id: 'friendly',
     label: 'Friendly',
-    instruction: 'Write in a warm, approachable tone. Be personable without being casual or effusive.',
+    instruction:
+      'Use a warm, conversational register: first person, contractions, an encouraging feel. Not stiff, not gushing.',
   },
   {
     id: 'confident',
     label: 'Confident',
-    instruction: 'Write in a direct, assured tone. State the point plainly, without hedging or filler qualifiers.',
+    instruction:
+      'Take a clear stance and lead with it. No hedging ("maybe", "I think", "it seems"), no filler qualifiers, no apologies.',
   },
   {
     id: 'thoughtful',
     label: 'Thoughtful',
-    instruction: 'Write in a measured, reflective tone. Acknowledge nuance and show considered reasoning.',
+    instruction:
+      'Be reflective: acknowledge a nuance or trade-off and show your reasoning before landing on a view.',
   },
 ] as const
 
@@ -40,55 +44,63 @@ export const INTENTS = [
   {
     id: 'support',
     label: 'Support',
-    instruction: "Agree with and reinforce the author's point, adding a brief reason or example.",
+    instruction:
+      "Endorse the author's point and strengthen it with one specific reason, example, or corroboration. Do not merely say you agree.",
   },
   {
     id: 'add-insight',
     label: 'Add insight',
-    instruction: 'Contribute one additional perspective or fact that builds on the post rather than restating it.',
+    instruction:
+      "Add something new: a further angle, a related fact, or an implication the post did not cover. Do not restate the post.",
   },
   {
     id: 'ask-question',
     label: 'Ask a question',
-    instruction: 'Ask one genuine, specific question that invites the author to expand on their point.',
+    instruction: 'End with exactly one specific, genuine question that invites the author to say more.',
   },
   {
     id: 'answer',
     label: 'Answer',
-    instruction: 'Directly and concisely answer the question raised in what you are responding to.',
+    instruction: 'Answer the question the post or comment poses, directly and concretely, in the first sentence.',
   },
   {
     id: 'disagree',
     label: 'Disagree',
-    instruction: 'Respectfully offer a different view, naming the specific point of disagreement and why.',
+    instruction:
+      'Push back: name the specific claim you disagree with and give your reason. Stay respectful; do not soften it into agreement.',
   },
   {
     id: 'congratulate',
     label: 'Congratulate',
-    instruction: 'Give a brief, sincere note of congratulations suited to the achievement described.',
+    instruction:
+      'Congratulate the person for the specific achievement described. Warm, sincere, and specific, not generic praise.',
   },
 ] as const
 
-// `approxTarget` is unused by the Phase 6 UI (which shows qualitative labels
-// only) and is reserved for Phase 7 prompt assembly.
+// Non-overlapping sentence ranges (ADR-0010): "roughly one or two" vs "roughly
+// two to four" both admit a 2-sentence reply, so the Phase 6 wording collapsed
+// the three lengths. Each instruction now pairs a discrete range with a density
+// verb. `approxTarget` is unused by the UI (qualitative labels only); the
+// Phase 7 provider tuning derives a token ceiling from the id, not this string.
 export const LENGTHS = [
   {
     id: 'short',
     label: 'Short',
-    instruction: 'Keep the response to roughly one or two sentences.',
-    approxTarget: 'roughly 1–2 sentences',
+    instruction: 'Write 1–2 sentences. Make a single point and stop.',
+    approxTarget: '1–2 sentences',
   },
   {
     id: 'medium',
     label: 'Medium',
-    instruction: 'Keep the response to roughly two to four sentences.',
-    approxTarget: 'roughly 2–4 sentences',
+    instruction: 'Write 3–4 sentences. Develop one idea with a supporting reason or example.',
+    approxTarget: '3–4 sentences',
   },
   {
     id: 'long',
     label: 'Long',
-    instruction: 'Keep the response to roughly four to six sentences; still a comment, not an essay.',
-    approxTarget: 'roughly 4–6 sentences; still a comment, not an essay',
+    instruction:
+      'Write 5–7 sentences, up to two short paragraphs. Develop the point fully — still a comment, not an article.',
+    approxTarget: '5–7 sentences, up to two short paragraphs',
   },
 ] as const
 

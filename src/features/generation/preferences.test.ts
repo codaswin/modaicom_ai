@@ -17,7 +17,15 @@ const ALL_ROWS = [...TONES, ...INTENTS, ...LENGTHS]
 
 // ADR-0009: instruction text is provider-neutral and carries no LinkedIn content.
 const BANNED_SUBSTRINGS = ['openai', 'gpt', 'claude', 'linkedin', 'http', 'api key']
-const MAX_INSTRUCTION_WORDS = 25
+// ADR-0010 sharpened the strings (concrete lever + explicit "don't"), raising the bound.
+const MAX_INSTRUCTION_WORDS = 40
+
+// Parse "N–M sentences" / "N-M sentences" from a Length instruction.
+function sentenceRange(instruction: string): [number, number] {
+  const match = instruction.match(/(\d+)\s*[–-]\s*(\d+)\s+sentences/)
+  if (!match) throw new Error(`no sentence range in "${instruction}"`)
+  return [Number(match[1]), Number(match[2])]
+}
 
 describe('Response Controls registries', () => {
   it('every row has a unique, non-empty id / label / instruction', () => {
@@ -41,10 +49,21 @@ describe('Response Controls registries', () => {
     }
   })
 
-  it('every Length row carries a non-empty approxTarget for Phase 7 prompt assembly', () => {
+  it('every Length row carries a non-empty approxTarget', () => {
     for (const row of LENGTHS) {
       expect(row.approxTarget.trim().length).toBeGreaterThan(0)
     }
+  })
+
+  it('the three Length instructions have non-overlapping, ascending sentence ranges (ADR-0010)', () => {
+    const [short, medium, long] = LENGTHS.map((row) => sentenceRange(row.instruction))
+    expect(short![1]).toBeLessThan(medium![0])
+    expect(medium![1]).toBeLessThan(long![0])
+  })
+
+  it('the three Length instructions are mutually distinct', () => {
+    const instructions = LENGTHS.map((row) => row.instruction)
+    expect(new Set(instructions).size).toBe(3)
   })
 
   it('has the agreed v1 vocabulary', () => {
