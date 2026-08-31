@@ -27,6 +27,49 @@ export function isRequestPageExtractionMessage(value: unknown): value is Request
   return candidate.version === RELAY_VERSION && candidate.type === 'REQUEST_PAGE_EXTRACTION'
 }
 
+// Sent by the popup to the content script to insert a Generated Draft into the
+// exact composer that started the Inline Targeting Session (Phase 8 / ADR-0011).
+// Additive on RELAY_VERSION — no bump. The draft text never passes through the
+// service worker. `sessionId` + `generation` bind the draft to the session that
+// produced it; the content script refuses unless both match its live session.
+export type InsertDraftMessage = {
+  version: typeof RELAY_VERSION
+  type: 'INSERT_DRAFT'
+  text: string
+  sessionId: string
+  generation: number
+}
+
+export const INSERT_FAILURE_KINDS = [
+  'editor-unavailable',
+  'route-changed',
+  'editor-not-empty',
+  'insert-failed',
+  'wrong-tab',
+] as const
+export type InsertFailureKind = (typeof INSERT_FAILURE_KINDS)[number]
+
+export type InsertDraftResponse = { ok: true } | { ok: false; reason: InsertFailureKind }
+
+export function isInsertDraftMessage(value: unknown): value is InsertDraftMessage {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Record<string, unknown>
+  return (
+    candidate.version === RELAY_VERSION &&
+    candidate.type === 'INSERT_DRAFT' &&
+    typeof candidate.text === 'string' &&
+    candidate.text.length > 0 &&
+    typeof candidate.sessionId === 'string' &&
+    candidate.sessionId.length > 0 &&
+    typeof candidate.generation === 'number' &&
+    Number.isFinite(candidate.generation)
+  )
+}
+
+export function isInsertFailureKind(value: unknown): value is InsertFailureKind {
+  return typeof value === 'string' && (INSERT_FAILURE_KINDS as readonly string[]).includes(value)
+}
+
 // ---------------------------------------------------------------------------
 // Generation protocol (Phase 5). A separate version namespace — a relay change
 // must not rev generation and vice versa. The API key never appears in any of

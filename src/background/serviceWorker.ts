@@ -51,14 +51,19 @@ async function writeRelay(tabId: number, generation: number, sessionId: string, 
     const existing = isSessionRelayRecord(existingValue) ? existingValue : undefined
     if (existing && existing.expiresAt <= now) await chrome.storage.session.remove(key)
     if (existing && existing.expiresAt > now && existing.generation > generation) return false
-    const record: SessionRelayRecord = { version: RELAY_VERSION, result, createdAt: now, expiresAt: now + RELAY_TTL_MS, generation }
+    const record: SessionRelayRecord = { version: RELAY_VERSION, result, createdAt: now, expiresAt: now + RELAY_TTL_MS, generation, sessionId }
     const nextGeneration: GenerationRecord = { version: RELAY_VERSION, generation, counter: (existingGeneration?.counter ?? 0) + 1, sessionId, createdAt: now, expiresAt: now + RELAY_TTL_MS }
     await chrome.storage.session.set({ [key]: record, [generationStorageKey]: nextGeneration })
     return true
   })
 }
 
-async function readAndClearRelay(tabId: number): Promise<SessionRelayRecord['result'] | null> {
+// The popup's read of the latest relay. Returns the typed result plus the
+// originating session's id and generation (Phase 8), so the popup can bind a
+// later INSERT_DRAFT to that exact Inline Targeting Session.
+export type RelayRead = { result: SessionRelayRecord['result']; sessionId: string; generation: number }
+
+async function readAndClearRelay(tabId: number): Promise<RelayRead | null> {
   return serializeTabOperation(tabId, async () => {
     const key = relayKey(tabId)
     const generationStorageKey = generationKey(tabId)
@@ -72,7 +77,7 @@ async function readAndClearRelay(tabId: number): Promise<SessionRelayRecord['res
     await chrome.storage.session.remove(key)
     const generationValue = (await chrome.storage.session.get(generationStorageKey))[generationStorageKey]
     if (isGenerationRecord(generationValue) && generationValue.expiresAt <= Date.now()) await chrome.storage.session.remove(generationStorageKey)
-    return value.result
+    return { result: value.result, sessionId: value.sessionId, generation: value.generation }
   })
 }
 

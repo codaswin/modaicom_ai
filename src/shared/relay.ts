@@ -32,6 +32,9 @@ export type SessionRelayRecord = {
   createdAt: number
   expiresAt: number
   generation: number
+  // The originating Inline Targeting Session's id (Phase 8). Returned to the
+  // popup so it can bind a later INSERT_DRAFT to that exact session.
+  sessionId: string
 }
 
 export function relayKey(tabId: number): string {
@@ -65,6 +68,7 @@ export function isSessionRelayRecord(value: unknown): value is SessionRelayRecor
     Number.isFinite(candidate.expiresAt) &&
     Number.isFinite(candidate.generation) &&
     candidate.expiresAt > candidate.createdAt &&
+    typeof candidate.sessionId === 'string' &&
     isInteractionExtractionResult(candidate.result)
   )
 }

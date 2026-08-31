@@ -415,4 +415,94 @@ describe('Popup', () => {
       expect(sent.preferences.length).toBe('long')
     })
   })
+
+  describe('Insert', () => {
+    const RELAY_SUCCESS = {
+      result: {
+        kind: 'success',
+        context: { kind: 'post-comment', post: { authorDisplayName: 'Ada', originalAuthoredText: 'A useful post.' } },
+      },
+      sessionId: 'sess-9',
+      generation: 4,
+    }
+
+    async function renderWithDraft() {
+      query.mockResolvedValue([{ id: 7, url: 'https://www.linkedin.com/feed/update/urn:li:activity:1/' }])
+      sendMessage.mockImplementation(async (msg: { type: string }) => {
+        if (msg.type === 'GET_PROVIDER_STATUS') return READY_STATUS
+        if (msg.type === 'GET_LATEST_RELAY') return RELAY_SUCCESS
+        return null
+      })
+      const port = makeFakePort()
+      connect.mockReturnValue(port)
+      const user = userEvent.setup()
+      render(<Popup />)
+      await screen.findByText('A useful post.')
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
+      await user.click(screen.getByRole('button', { name: 'Generate reply' }))
+      port.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Drafted reply text.' })
+      await screen.findByDisplayValue('Drafted reply text.')
+      return { user }
+    }
+
+    it('sends INSERT_DRAFT with the session pair and shows the confirmation', async () => {
+      const { user } = await renderWithDraft()
+      tabsSendMessage.mockResolvedValue({ ok: true })
+
+      await user.click(screen.getByRole('button', { name: 'Insert' }))
+
+      await waitFor(() =>
+        expect(tabsSendMessage).toHaveBeenCalledWith(7, {
+          version: 2,
+          type: 'INSERT_DRAFT',
+          text: 'Drafted reply text.',
+          sessionId: 'sess-9',
+          generation: 4,
+        }),
+      )
+      expect(await screen.findByText(/Inserted into your LinkedIn comment box/)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Insert' })).not.toBeInTheDocument()
+    })
+
+    it('maps a failure reason to fixed copy and keeps the draft + Copy', async () => {
+      const { user } = await renderWithDraft()
+      tabsSendMessage.mockResolvedValue({ ok: false, reason: 'editor-not-empty' })
+
+      await user.click(screen.getByRole('button', { name: 'Insert' }))
+
+      expect(await screen.findByText(/Your comment box already has text/)).toBeInTheDocument()
+      expect(screen.getByDisplayValue('Drafted reply text.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
+    })
+
+    it('shows the wrong-tab message when the content script cannot be reached', async () => {
+      const { user } = await renderWithDraft()
+      tabsSendMessage.mockRejectedValue(new Error('no receiving end'))
+
+      await user.click(screen.getByRole('button', { name: 'Insert' }))
+
+      expect(await screen.findByText(/Switch to the LinkedIn tab where you started/)).toBeInTheDocument()
+    })
+
+    it('offers no Insert when the draft came from the on-demand fallback (no session)', async () => {
+      query.mockResolvedValue([{ id: 7, url: 'https://www.linkedin.com/posts/example' }])
+      sendMessage.mockImplementation(async (msg: { type: string }) =>
+        msg.type === 'GET_PROVIDER_STATUS' ? READY_STATUS : null,
+      )
+      tabsSendMessage.mockResolvedValue(POST_RESULT)
+      const port = makeFakePort()
+      connect.mockReturnValue(port)
+      const user = userEvent.setup()
+
+      render(<Popup />)
+      await screen.findByText('A useful post.')
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
+      await user.click(screen.getByRole('button', { name: 'Generate reply' }))
+      port.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Drafted reply text.' })
+      await screen.findByDisplayValue('Drafted reply text.')
+
+      expect(screen.queryByRole('button', { name: 'Insert' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
+    })
+  })
 })
