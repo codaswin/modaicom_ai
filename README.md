@@ -1,32 +1,125 @@
-# modaicom
+<div align="center">
+  <img src="assets/icon-source.svg" width="104" height="104" alt="modaicom logo">
 
-modaicom is an open-source Chrome extension for AI-assisted LinkedIn responses with the user in control. Phase 0 and Phase 1 provide the extension foundation and LinkedIn detection; Phase 2 extracts Primary Post context from supported individual LinkedIn post pages; Phase 3 targets the Owning Post of an explicitly clicked inline `modaicom` trigger beside an eligible LinkedIn comment composer on the home feed or an individual post page. AI assistance is not implemented yet.
+  # modaicom
 
-## Requirements
+  **Thoughtful LinkedIn replies, minus the blank-page struggle.**
 
-- Node.js 24 LTS
-- npm
-- Google Chrome or another Chromium browser that can load unpacked extensions
+  An open-source Chrome extension that understands the post or comment you choose,
+  drafts a response in your voice, and leaves the final word—and the Post button—to you.
 
-## Development
+  [![Release](https://img.shields.io/github/v/release/codaswin/modaicom_ai?style=flat-square&color=5b3fd6)](https://github.com/codaswin/modaicom_ai/releases/latest)
+  [![CI](https://img.shields.io/github/actions/workflow/status/codaswin/modaicom_ai/ci.yml?branch=main&style=flat-square&label=checks)](https://github.com/codaswin/modaicom_ai/actions/workflows/ci.yml)
+  [![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](manifest.config.ts)
+  [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](tsconfig.json)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](LICENSE)
 
-Install dependencies:
+  [Download v1](https://github.com/codaswin/modaicom_ai/releases/latest) ·
+  [How it works](#how-it-works) ·
+  [Privacy](#privacy-by-design) ·
+  [Build from source](#build-from-source)
+</div>
 
-```sh
-npm install
+---
+
+The name comes from **“modai”**, Tamil for laziness 😄. modaicom removes the tedious part of composing a good LinkedIn response while keeping the human firmly in control.
+
+## How it works
+
+1. Open a supported LinkedIn post or comment composer.
+2. Click the small purple **m** beside LinkedIn's editor.
+3. Choose a **Tone**, **Intent**, and **Length**.
+4. Generate, review, regenerate, copy, or insert the draft.
+5. Edit anything you want, then manually click LinkedIn's **Post** or **Reply** button.
+
+> [!IMPORTANT]
+> modaicom never publishes, submits, likes, follows, or performs any other LinkedIn action automatically.
+
+## What ships in v1
+
+- Inline targeting for supported top-level comment composers on the LinkedIn home feed and individual post pages.
+- Reply targeting for structurally validated comment threads on LinkedIn's supported legacy post markup.
+- Read-only extraction of the exact owning post—and the target comment when replying.
+- Four tones: **Professional**, **Friendly**, **Confident**, and **Thoughtful**.
+- Six intents: **Support**, **Add insight**, **Ask a question**, **Answer**, **Disagree**, and **Congratulate**.
+- Three response lengths: **Short**, **Medium**, and **Long**.
+- Bring-your-own-key OpenAI integration with a configurable model.
+- Copy, regenerate, or insert a draft into the exact empty editor that started the session.
+- Protection against overwriting user-written text, stale editors, route changes, and wrong-tab insertion.
+- Accessible keyboard-operable controls, typed failures, and fail-closed LinkedIn DOM adapters.
+
+## Install v1
+
+modaicom is distributed as an unpacked Chrome extension for this first open-source release.
+
+1. Download `modaicom-v1.0.0.zip` from the [latest GitHub release](https://github.com/codaswin/modaicom_ai/releases/latest).
+2. Unzip it somewhere permanent.
+3. Open `chrome://extensions` in Chrome.
+4. Enable **Developer mode**.
+5. Click **Load unpacked** and choose the unzipped folder.
+6. Pin modaicom from Chrome's Extensions menu.
+
+Chrome does not automatically update unpacked extensions. Download a newer release and replace the folder when upgrading.
+
+## Configure AI drafting
+
+1. Open `chrome://extensions` → **modaicom** → **Details** → **Extension options**.
+2. Add a scoped OpenAI API key, preferably with a spend cap.
+3. Choose an OpenAI model. v1 requests network access only to `api.openai.com`; custom endpoints require a source build with the matching host permission.
+4. Read and accept the provider-transmission disclosure.
+5. Save, then use **Test key**.
+
+modaicom has no backend and no shared API key. Provider usage is billed directly to the key you configure.
+
+## Privacy by design
+
+| Boundary | v1 behavior |
+| --- | --- |
+| Before you click modaicom | Inspects structural markers only to place the trigger. It does not read authored post, comment, or editor text. |
+| After an explicit trigger click | Reads only the validated owning post and, for a supported reply, its target comment. |
+| Sent to your AI provider | Post text, optional target-comment text, interaction kind, and your tone/intent/length choices. |
+| Never sent | Author names, profiles, URLs, LinkedIn identifiers, page HTML, cookies, account identifiers, or editor contents. |
+| API key | Stored in `chrome.storage.local`, never synced, and read only by the background service worker. |
+| Extracted context | Relayed through five-minute `chrome.storage.session` records and cleared after consumption or cleanup. |
+| Generated drafts | Kept in memory; never logged, analyzed, or persisted by modaicom. |
+| Publishing | Always manual. modaicom can insert text, but only you can submit it. |
+
+Your configured provider's terms and retention policy govern content sent for generation. Review the disclosure before enabling AI drafting. The security and consent boundaries are documented in [ADR-0007](docs/adr/0007-linkedin-content-transmission-and-byok-boundary.md), [ADR-0008](docs/adr/0008-ai-provider-network-and-key-storage-boundary.md), and [ADR-0011](docs/adr/0011-editor-insertion-and-inline-trigger-redesign.md).
+
+## Supported LinkedIn surfaces
+
+| Surface | Support |
+| --- | --- |
+| Home feed: `https://linkedin.com/feed/` and `https://www.linkedin.com/feed/` | Top-level post comment targeting after LinkedIn mounts the comment composer. Dynamically loaded posts are reconciled. |
+| Individual `/posts/...` pages | Post comments and supported comment-thread replies. |
+| Individual `/feed/update/urn:li:activity:...` pages | Post comments and supported comment-thread replies. |
+| Messages, search, post creation, nested/shared posts, unrelated cards | Intentionally unsupported. No trigger is rendered. |
+| Unknown or ambiguous LinkedIn markup | Fails closed rather than guessing. |
+
+LinkedIn changes its DOM frequently. The conservative adapter and verified selector regimes are documented in [ADR-0005](docs/adr/0005-linkedin-markup-regimes.md) and [docs/testing/linkedin-selectors.md](docs/testing/linkedin-selectors.md).
+
+## Build from source
+
+Requirements: **Node.js 24 LTS**, npm, and Chrome or another Chromium browser that supports unpacked extensions.
+
+```bash
+git clone https://github.com/codaswin/modaicom_ai.git
+cd modaicom_ai
+npm ci
+npm run check
 ```
 
-Start the CRXJS development build:
+Then open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select `dist/`.
 
-```sh
+For development with live rebuilding:
+
+```bash
 npm run dev
 ```
 
-In Chrome, open `chrome://extensions`, enable **Developer mode**, select **Load unpacked**, and choose the generated `dist` directory. Keep the development command running while editing.
+Available checks:
 
-## Checks
-
-```sh
+```bash
 npm run lint
 npm run typecheck
 npm test
@@ -34,61 +127,52 @@ npm run build
 npm run check
 ```
 
-`npm run check` runs linting, strict TypeScript checking, the complete test suite, and the production build.
-
-## Production build
-
-```sh
-npm run build
-```
-
-Load the generated `dist` directory through Chrome's **Load unpacked** option.
-
-## Manual smoke test
-
-Validation records: [Phase 3](docs/testing/phase-3-manual-smoke-test.md), [Phase 4](docs/testing/phase-4-manual-smoke-test.md), [Phase 5](docs/testing/phase-5-manual-smoke-test.md), [Phase 6](docs/testing/phase-6-manual-smoke-test.md), [Phase 7](docs/testing/phase-7-manual-smoke-test.md), [Phase 8](docs/testing/phase-8-manual-smoke-test.md). Selector reference and re-verification snippet: [docs/testing/linkedin-selectors.md](docs/testing/linkedin-selectors.md).
-
-1. Run `npm run check` and confirm it succeeds.
-2. Load the generated `dist` directory as an unpacked Chrome extension.
-3. Click the modaicom icon and confirm the React popup opens.
-4. Open `https://linkedin.com` and confirm the popup shows `LinkedIn detected ✓`.
-5. Open `https://www.linkedin.com/feed/`, refresh it, reopen the popup, and confirm detection still succeeds.
-6. Open a non-LinkedIn page and confirm the popup shows `Open LinkedIn to use modaicom.`
-7. Confirm HTTP LinkedIn URLs, unsupported subdomains such as `learning.linkedin.com`, and lookalike domains such as `linkedin.com.example.com` are not detected.
-8. Simulate or encounter an unavailable active-tab URL and confirm the popup shows its error state without crashing; select **Retry** and confirm detection runs again.
-9. Open a supported individual LinkedIn post page and confirm the popup shows the author and full authored post text.
-10. On `/feed/`, open a post's comment section and confirm its comment composer receives one accessible inline `modaicom` trigger; on a supported individual-post page confirm the always-rendered composer receives one; confirm unrelated editors and reply composers receive none.
-11. Click the inline trigger and confirm the editor is not focused, read, or changed; reopen the popup and confirm the selected context or fixed failure copy appears.
-12. Confirm SPA route changes and editor rerenders remove orphaned triggers and unsupported routes contain no modaicom controls.
-13. Confirm a collapsed post shows the exact guidance to expand “see more” manually, then select **Retry** on an individual-post popup fallback.
-14. Confirm media-only, shared-only, ambiguous, missing-author, and missing-post-text cases fail clearly without mutating LinkedIn.
-
 ## Architecture
 
-The current dependency direction is deliberately small:
-
 ```text
-LinkedIn content script ──► service worker relay ──► React popup
-          │                         │
-          └── exact-root context extraction
+LinkedIn page
+  └─ exact-host content script
+       ├─ structural-only composer reconciliation
+       ├─ explicit-click context extraction
+       └─ explicit, guarded draft insertion
+              │
+              ▼
+       service worker
+       ├─ short-lived session relay
+       ├─ consent + provider boundary
+       └─ provider request using the user's key
+              │
+              ▼
+       React popup
+       ├─ context preview
+       ├─ tone / intent / length
+       └─ generate / regenerate / copy / insert
 ```
 
-The content script performs structural editor/post reconciliation and handles explicit inline clicks. The service worker validates versioned messages and owns the five-minute tab-keyed `chrome.storage.session` relay. The popup owns presentation and retains the existing individual-post on-demand fallback.
+The project uses Manifest V3, React, TypeScript, Vite, CRXJS, and Vitest. Domain vocabulary lives in [CONTEXT.md](CONTEXT.md); architectural decisions live in [docs/adr](docs/adr); phase specifications and manual validation checklists live under [docs](docs).
 
-Future phases may introduce targeted comment/reply extraction, a prompt engine, LLM adapters, and storage beyond the bounded session relay. Those capabilities remain documented rather than implemented before their requirements exist.
+## Current validation status
 
-## Privacy and control
+Automated linting, strict TypeScript checks, tests, security bundle assertions, and the production build run in [GitHub Actions](https://github.com/codaswin/modaicom_ai/actions/workflows/ci.yml). LinkedIn is a moving external surface, so real-browser smoke-test records remain explicit under [docs/testing](docs/testing). At the time of this release, those checklists are still marked **Pending validation**; treat v1 as an open-source first release and report DOM compatibility issues with the affected surface only—never include private LinkedIn content.
 
-Phase 3 uses exact LinkedIn host permissions and a static `document_idle` content script so an inline `modaicom` trigger can appear beside eligible comment composers while the popup is closed. Before an explicit click, the content script inspects only structural information needed to identify composers and owning posts; it does not read authored post/comment text or editor values. After a click, only the selected post’s typed plain context or failure is relayed through the service worker’s five-minute `chrome.storage.session` handoff. The popup’s individual-post fallback asks the same content script to extract, so the only permissions are `activeTab` and `storage`. No URLs, HTML, editor text, raw exceptions, analytics, logging, network transmission, or long-term persistence are used. Extraction remains read-only: modaicom never clicks “see more,” inserts text, or publishes a comment or reply.
+## Contributing
 
-LinkedIn currently serves two markup regimes and both are recognised: the legacy `article` / `.feed-shared-update-v2` structure on individual `/posts/...` pages, and the newer server-driven UI on the home `/feed/` (obfuscated classes, no activity URN, `[data-testid="mainFeed"]` list items, a lazily mounted comment composer). An unrecognised feed fails closed. See [ADR-0005](docs/adr/0005-linkedin-markup-regimes.md); the popup's extraction transport is [ADR-0004](docs/adr/0004-popup-extraction-via-content-script.md). Selectors and a re-verification snippet live in [docs/testing/linkedin-selectors.md](docs/testing/linkedin-selectors.md).
+Issues and pull requests are welcome. Before changing LinkedIn adapters or privacy boundaries:
 
-**AI drafting (Phase 5)** changes one thing: when you click **Generate** in the popup, the authored text you selected — the LinkedIn post, plus the comment for a reply — is sent to *your* configured AI provider using *your own* API key. modaicom runs no server. It sends **only** that authored text and the interaction kind; it never sends author names, headlines, any URL, the activity identifier, the page, your draft, cookies, or account identifiers. You consent once per provider on the options page before anything is transmitted, and every generation is a deliberate click. The key is stored in `chrome.storage.local` only (never synced), read only by the service worker, and never enters a runtime message, the content script, or the LinkedIn page. Drafts are shown for you to copy — nothing is inserted or posted. This deliberately supersedes the earlier no-transmission guarantee; see [ADR-0007](docs/adr/0007-linkedin-content-transmission-and-byok-boundary.md) and [ADR-0008](docs/adr/0008-ai-provider-network-and-key-storage-boundary.md).
+1. Read [AGENTS.md](AGENTS.md), [CONTEXT.md](CONTEXT.md), and the relevant ADRs.
+2. Keep fixtures synthetic and redacted—never commit real LinkedIn HTML or authored content.
+3. Preserve fail-closed ownership validation and user-controlled publication.
+4. Run `npm run check` before opening a pull request.
 
-## Status
+Please use [GitHub Issues](https://github.com/codaswin/modaicom_ai/issues) for bugs and feature discussions.
 
-Implemented scope: Phase 0 Foundation, Phase 1 LinkedIn Detection, Phase 2 Primary Post context extraction, Phase 3 inline Feed-Post Targeting, Phase 4 Targeted Comment/Reply Extraction, and **Phase 5 AI Provider Foundation** — a provider-neutral `AIProvider` interface with one reference implementation (OpenAI, Chat Completions, `baseUrl`-parameterised for the compatible ecosystem), BYOK configuration on an options page, a `chrome.storage.local` key never touched by the content script, a service-worker-only network path, a strictly minimised `GenerationRequest`, recorded transmission consent, and a typed `GenerationError` union. The inline-trigger architecture is ADR-0003; ADR-0004/0005/0006 cover extraction transport, markup regimes, and the comment-reply shape; ADR-0007/0008 cover LinkedIn-content transmission and the provider security boundary. Out of scope in Phase 5: tone/intent/length controls, multiple suggestions, editor insertion, automatic posting, local AI, any backend.
+## Creator
+
+Built by **Aswin**.
+
+- [LinkedIn](https://www.linkedin.com/in/aswin-s-1a3026346/)
+- [GitHub](https://github.com/codaswin)
 
 ## License
 
-[MIT](LICENSE)
+modaicom is open source under the [MIT License](LICENSE).

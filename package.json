@@ -1,6 +1,6 @@
 {
   "name": "modaicom",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "AI-assisted LinkedIn responses with the user in control.",
   "license": "MIT",

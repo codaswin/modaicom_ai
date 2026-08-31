@@ -42,6 +42,12 @@ target/
 web-ext-artifacts/
 .chrome/
 chrome-profile/
+# Locally assembled GitHub release bundles
+release/
+releases/
+artifacts/
+*.zip
+*.tar.gz
 # CRXJS / Vite plugin dev-server working directory
 .crxjs/
 
