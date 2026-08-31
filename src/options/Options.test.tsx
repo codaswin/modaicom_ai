@@ -44,6 +44,26 @@ async function loaded() {
   await screen.findByText('AI provider (bring your own key)')
 }
 
+describe('Options page — provider dropdown', () => {
+  it('lists every registered provider', async () => {
+    await loaded()
+    const select = screen.getByRole('combobox', { name: 'Provider' })
+    const names = [...select.querySelectorAll('option')].map((o) => o.textContent)
+    expect(names).toEqual(['OpenAI', 'Groq', 'xAI (Grok)'])
+  })
+
+  it('switching provider requests that provider’s host on Test', async () => {
+    const user = userEvent.setup()
+    sendMessage.mockResolvedValue(okReply([{ id: 'grok-4' }]))
+    await loaded()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Provider' }), 'xai')
+    await user.type(screen.getByPlaceholderText('Paste your API key'), 'xai-key')
+    await user.click(screen.getByRole('button', { name: 'Test connection' }))
+    expect(permRequest).toHaveBeenCalledWith({ origins: ['https://api.x.ai/*'] })
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'TEST_AND_LIST', providerId: 'xai' }))
+  })
+})
+
 describe('Options page — connection test and model selection', () => {
   it('Test connection requests the host, sends TEST_AND_LIST, and fills the model dropdown', async () => {
     const user = userEvent.setup()
