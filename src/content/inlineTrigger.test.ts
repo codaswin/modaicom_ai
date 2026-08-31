@@ -317,7 +317,11 @@ describe('inline trigger content boundary', () => {
     expect(owners.some((o) => o === 'comment-reply:urn:li:comment:(activity:1,10)')).toBe(true)
     // reply trigger sits next to the reply editor
     const replyEditor = main.querySelector('[aria-placeholder="Add a reply…"]')!
-    expect(replyEditor.nextElementSibling?.querySelector('button')?.getAttribute('aria-label')).toBe('modaicom — draft a reply')
+    const replyTrigger = replyEditor.nextElementSibling as HTMLElement
+    expect(replyTrigger.matches('[data-modaicom-inline-wrapper]')).toBe(true)
+    expect(replyTrigger.shadowRoot?.querySelector('button')?.getAttribute('aria-label')).toBe(
+      'Generate a reply with modaicom',
+    )
     main.remove()
   })
 

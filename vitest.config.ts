@@ -6,5 +6,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
+    // The inline trigger ships its stylesheet as a `?raw` string applied via
+    // adoptedStyleSheets; let that one file through instead of the default CSS
+    // stub so tests can assert on it. popup.css / options.css stay stubbed.
+    css: { include: [/inlineTrigger\.css/] },
   },
 })

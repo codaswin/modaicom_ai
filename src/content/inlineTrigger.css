@@ -1,0 +1,135 @@
+/* The complete stylesheet for the inline modaicom trigger. Lives in one file,
+ * applied inside the trigger's shadow root via adoptedStyleSheets — LinkedIn's
+ * CSS cannot reach in and this cannot leak out. Colour tokens mirror the popup
+ * (#5b3fd6 / #4930b7 / #b9aaff) so the extension reads as one product. */
+
+:host {
+  /* Zero-size in-flow anchor: occupies no layout space, so the trigger's
+   * appearance never shifts LinkedIn's layout. The button positions itself
+   * against this anchor and therefore tracks the editor on every reflow /
+   * scroll with no ResizeObserver and no scroll handlers. */
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  vertical-align: top;
+}
+
+.trigger {
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: #5b3fd6;
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(91, 63, 214, 0.4);
+  cursor: pointer;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  transition:
+    background 120ms ease,
+    transform 80ms ease,
+    box-shadow 120ms ease;
+}
+
+.trigger:hover {
+  background: #4930b7;
+  transform: translateY(-50%) translateY(-1px);
+  box-shadow: 0 2px 6px rgba(73, 48, 183, 0.45);
+}
+
+.trigger:focus-visible {
+  outline: 3px solid #b9aaff;
+  outline-offset: 2px;
+}
+
+.trigger:active {
+  transform: translateY(-50%) scale(0.96);
+  background: #3f278f;
+}
+
+.trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+.trigger:disabled:hover {
+  background: #5b3fd6;
+  transform: translateY(-50%);
+}
+
+.mark {
+  font-size: 17px;
+  font-weight: 750;
+  line-height: 1;
+  user-select: none;
+}
+
+.trigger.is-busy {
+  cursor: progress;
+}
+
+.trigger.is-busy .mark {
+  visibility: hidden;
+}
+
+.trigger.is-busy::before {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: modaicom-trigger-spin 0.6s linear infinite;
+}
+
+@keyframes modaicom-trigger-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #1e1b2e;
+  color: #fff;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.trigger:hover .tooltip,
+.trigger:focus-visible .tooltip {
+  opacity: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  .trigger {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  }
+
+  .trigger:focus-visible {
+    outline-color: #cabcff;
+  }
+}

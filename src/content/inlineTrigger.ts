@@ -8,15 +8,15 @@ import { RELAY_VERSION } from '../shared/relay'
 import { isRequestPageExtractionMessage } from '../shared/protocol'
 import { EDITOR_SELECTOR, classifyComposer, isEligibleCommentComposer, looksLikeReplyComposer } from './composerAdapter'
 import { recordDiagnostic } from './diagnostics'
+import { OWNED_WRAPPER_ATTR, createInlineTrigger, type InlineTriggerHandle } from './triggerButton'
 
 type ResolvedTarget =
   | { kind: 'post-comment'; postElement: HTMLElement; key: string }
   | { kind: 'comment-reply'; postElement: HTMLElement; commentElement: HTMLElement; key: string }
 
-const OWNED_WRAPPER = 'data-modaicom-inline-wrapper'
+const OWNED_WRAPPER = OWNED_WRAPPER_ATTR
 const OWNER_TOKEN = 'data-modaicom-inline-target'
 const COMMENT_TOKEN = 'data-modaicom-inline-comment-target'
-const BUSY = 'data-modaicom-inline-busy'
 let generation = 0
 const sessionId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `session-${Math.random().toString(36).slice(2)}`
 let observer: MutationObserver | undefined
@@ -93,25 +93,16 @@ function insertTrigger(editor: HTMLElement, target: ResolvedTarget): void {
   if (Array.from(document.querySelectorAll<HTMLElement>(`[${OWNED_WRAPPER}]`)).some((node) => node.dataset.modaicomOwner === key)) return
   const stage = isFeedRoute() ? 'feed' : 'individual'
   recordDiagnostic({ stage, event: 'trigger-insertion', insertionAttempted: true })
-  const wrapper = document.createElement('span')
-  wrapper.dataset.modaicomInlineWrapper = ''
-  wrapper.dataset.modaicomOwner = key
-  const button = document.createElement('button')
-  button.type = 'button'
-  button.textContent = 'modaicom'
-  button.setAttribute('aria-label', target.kind === 'comment-reply' ? 'modaicom — draft a reply' : 'modaicom — draft a comment')
-  button.addEventListener('click', (event) => runInlineExtraction(event, button, target))
-  wrapper.append(button)
-  editor.insertAdjacentElement('afterend', wrapper)
+  const trigger = createInlineTrigger(target.kind, key, (event) => runInlineExtraction(event, trigger, target))
+  editor.insertAdjacentElement('afterend', trigger.host)
 }
 
-function runInlineExtraction(event: Event, button: HTMLButtonElement, target: ResolvedTarget): void {
+function runInlineExtraction(event: Event, trigger: InlineTriggerHandle, target: ResolvedTarget): void {
   event.preventDefault()
   event.stopPropagation()
   const owner = target.postElement
-  if (button.disabled || !owner.isConnected || !isSupportedRoute()) return
-  button.disabled = true
-  button.setAttribute(BUSY, '')
+  if (trigger.busy || !owner.isConnected || !isSupportedRoute()) return
+  trigger.setBusy(true)
   const clickGeneration = generation + 1
   generation = clickGeneration
   owner.setAttribute(OWNER_TOKEN, String(clickGeneration))
@@ -135,8 +126,7 @@ function runInlineExtraction(event: Event, button: HTMLButtonElement, target: Re
   else if (commentStale) result = { kind: 'comment-stale-target' }
   owner.removeAttribute(OWNER_TOKEN)
   if (target.kind === 'comment-reply') target.commentElement.removeAttribute(COMMENT_TOKEN)
-  button.disabled = false
-  button.removeAttribute(BUSY)
+  trigger.setBusy(false)
   recordDiagnostic({ stage, event: 'extraction', extractionOutcome: result.kind, authorFieldFound: result.kind === 'success', authoredBodyFieldFound: result.kind === 'success', normalizationSucceeded: result.kind === 'success' })
 
   if (runtimeInvalidated || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
