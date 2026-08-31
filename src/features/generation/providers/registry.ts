@@ -1,4 +1,5 @@
 import type { AIProvider } from '../types'
+import { createAnthropicProvider } from './anthropic'
 import { createOpenAiCompatibleProvider } from './openaiCompatible'
 import type { ProviderPreset } from './preset'
 import { OPENAI_PRESET, PROVIDER_PRESETS } from './presets'
@@ -6,10 +7,14 @@ import { OPENAI_PRESET, PROVIDER_PRESETS } from './presets'
 // Provider identity is only ever a lookup key here — never a branch in the
 // generation layer, the service worker, or the options page (ADR-0012). Four of
 // the five providers are built from a preset by the shared transport; Anthropic
-// (Ticket 3) slots in with its own adapter factory, same interface.
+// slots in with its own adapter factory, same interface, same preset shape.
+const ADAPTERS: Record<string, (preset: ProviderPreset) => AIProvider> = {
+  anthropic: createAnthropicProvider,
+}
+
 const PRESETS_BY_ID = new Map<string, ProviderPreset>(PROVIDER_PRESETS.map((preset) => [preset.id, preset]))
 const PROVIDERS = new Map<string, AIProvider>(
-  PROVIDER_PRESETS.map((preset) => [preset.id, createOpenAiCompatibleProvider(preset)]),
+  PROVIDER_PRESETS.map((preset) => [preset.id, (ADAPTERS[preset.id] ?? createOpenAiCompatibleProvider)(preset)]),
 )
 
 export function getProvider(id: string): AIProvider | undefined {

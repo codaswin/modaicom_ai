@@ -1,7 +1,6 @@
 import type {
   AIProvider,
   GenerateOptions,
-  GenerationError,
   GenerationInput,
   GenerationResult,
   ListModelsOptions,
@@ -10,6 +9,7 @@ import type {
 } from '../types'
 import { modelFilter } from './modelFilter'
 import type { KeyAuth, ProviderPreset } from './preset'
+import { abortErrorFor, isAbortError, mapHttpError } from './providerHttp'
 
 // The shared OpenAI-compatible transport (ADR-0012). `generate` and `listModels`
 // are implemented once here and parameterised by a Provider Preset; OpenAI,
@@ -29,29 +29,6 @@ function stripTrailingSlash(url: string): string {
 
 function resolveListUrl(baseUrl: string, path: string): string {
   return /^https?:\/\//i.test(path) ? path : `${stripTrailingSlash(baseUrl)}${path}`
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')
-}
-
-function abortErrorFor(signal: AbortSignal): GenerationError {
-  const reason = signal.reason as { name?: unknown } | undefined
-  return reason && reason.name === 'TimeoutError' ? { kind: 'request-timeout' } : { kind: 'generation-cancelled' }
-}
-
-// The one HTTP -> GenerationErrorKind mapping every adapter must mirror
-// (ADR-0012). Response bodies are never surfaced (ADR-0008).
-export function mapHttpError(response: Response): GenerationError {
-  if (response.status === 401 || response.status === 403) return { kind: 'authentication-failed' }
-  if (response.status === 404) return { kind: 'model-not-available' }
-  if (response.status === 429) {
-    const seconds = Number(response.headers.get('retry-after'))
-    return Number.isFinite(seconds) && seconds > 0
-      ? { kind: 'rate-limited', retryAfterMs: Math.round(seconds * 1000) }
-      : { kind: 'rate-limited' }
-  }
-  return { kind: 'provider-error' }
 }
 
 function extractText(body: unknown): string | undefined {
@@ -120,13 +97,7 @@ export function createOpenAiCompatibleProvider(preset: ProviderPreset): AIProvid
         return { ok: false, error: { kind: 'network-error' } }
       }
 
-      if (!response.ok) {
-        const error = mapHttpError(response)
-        // `model-not-available` is a generation-time concept; a 404 on the
-        // list route is just a provider/endpoint error the caller can retry or
-        // fall back from.
-        return { ok: false, error: error.kind === 'model-not-available' ? { kind: 'provider-error' } : error }
-      }
+      if (!response.ok) return { ok: false, error: mapHttpError(response, 'list') }
 
       // A 200 with an unparseable body or no usable models is not an error — the
       // caller falls back to the preset's curated list (ADR-0012).

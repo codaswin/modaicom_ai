@@ -77,5 +77,32 @@ export const XAI_PRESET: ProviderPreset = {
   ],
 }
 
+// Anthropic `GET /v1/models` -> `{ data: [{ id, display_name }] }`. The list is
+// all chat models, so the filter is a near-passthrough. The dedicated adapter
+// (`anthropic.ts`) reads this preset for its base URL, list shape, and fallback
+// list; only `generate` diverges (Messages API).
+function parseAnthropicModels(body: unknown): RawModelRecord[] {
+  const data = (body as { data?: unknown })?.data
+  if (!Array.isArray(data)) return []
+  return data
+    .filter((row): row is { id: string; display_name?: string } => typeof (row as { id?: unknown }).id === 'string')
+    .map((row) => (row.display_name ? { id: row.id, label: row.display_name } : { id: row.id }))
+}
+
+export const ANTHROPIC_PRESET: ProviderPreset = {
+  id: 'anthropic',
+  label: 'Anthropic',
+  baseUrl: 'https://api.anthropic.com/v1',
+  host: 'https://api.anthropic.com/*',
+  keyAuth: 'x-api-key',
+  listModels: { path: '/models', parse: parseAnthropicModels },
+  modelFilter: {},
+  fallbackModels: [
+    { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+    { id: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
+    { id: 'claude-3-5-haiku-latest', label: 'Claude Haiku 3.5' },
+  ],
+}
+
 // Registration order = display order in the provider dropdown.
-export const PROVIDER_PRESETS: readonly ProviderPreset[] = [OPENAI_PRESET, GROQ_PRESET, XAI_PRESET]
+export const PROVIDER_PRESETS: readonly ProviderPreset[] = [OPENAI_PRESET, GROQ_PRESET, XAI_PRESET, ANTHROPIC_PRESET]

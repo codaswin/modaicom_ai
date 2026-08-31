@@ -49,7 +49,7 @@ describe('Options page — provider dropdown', () => {
     await loaded()
     const select = screen.getByRole('combobox', { name: 'Provider' })
     const names = [...select.querySelectorAll('option')].map((o) => o.textContent)
-    expect(names).toEqual(['OpenAI', 'Groq', 'xAI (Grok)'])
+    expect(names).toEqual(['OpenAI', 'Groq', 'xAI (Grok)', 'Anthropic'])
   })
 
   it('switching provider requests that provider’s host on Test', async () => {
