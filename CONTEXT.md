@@ -49,11 +49,11 @@ A post candidate that belongs directly to the home feed's post collection, exclu
 _Avoid_: Visible card, first feed item, nested post
 
 **Inline Trigger**:
-A branded, accessible `modaicom` button placed beside an eligible LinkedIn comment or reply composer and explicitly used by the user to target that composer’s Interaction Target for read-only extraction.
-_Avoid_: Selection Control, automatic trigger, editor insertion control
+A compact, branded, accessible `modaicom` button rendered in an isolated shadow root beside an Eligible Comment Composer or Reply Composer, clicked by the user to target that composer's Interaction Target for read-only extraction. It starts the Inline Targeting Session that a later Draft Insertion completes.
+_Avoid_: Selection Control, automatic trigger, "modaicom" text button
 
 **Inline Targeting Session**:
-The ephemeral interaction beginning when the user clicks an Inline Trigger and ending after the selected Interaction Target's extraction result reaches its terminal handoff or is cleared.
+The ephemeral interaction beginning when the user clicks an Inline Trigger and lasting until an SPA route change, a fresh Inline Trigger click, or the five-minute relay expiry. It spans extraction, generation, and any number of Draft Insertions; the content script holds a live reference to the exact editor for the session's whole duration.
 _Avoid_: Persistent selection, background targeting
 
 **Interaction Target**:
@@ -145,8 +145,16 @@ _Avoid_: Terms acceptance, opt-in flag, telemetry consent
 _Avoid_: Settings blob, credentials object
 
 **Generated Draft**:
-The single read-only reply text a generation returns to the popup for the user to copy manually. It is never inserted into LinkedIn, never posted, never persisted, and never ranked against alternatives. From Phase 7 its Tone, Intent and Response Length are shaped by the user's Generation Preferences (Phase 6 built the controls; Phase 7 wired them into the prompt). Multiple suggestions and editor insertion remain out of scope.
+The single reply text a generation returns to the popup. The user can copy it, or from Phase 8 insert it unchanged into the exact composer that started the Inline Targeting Session (Draft Insertion). It is never posted, never persisted, and never ranked against alternatives. From Phase 7 its Tone, Intent and Response Length are shaped by the user's Generation Preferences (Phase 6 built the controls; Phase 7 wired them into the prompt). Multiple suggestions remain out of scope.
 _Avoid_: Suggestion, completion, auto-reply
+
+**Draft Insertion**:
+Writing a Generated Draft into the exact Eligible Comment Composer or Reply Composer that started the Inline Targeting Session, on the user's explicit click, through the browser's editing pipeline. Refused if the editor was replaced, the route changed, the session was superseded, or the editor holds text the user wrote — modaicom's own untouched prior insertion from the same session excepted. Never submits; the user still clicks LinkedIn's Post or Reply control.
+_Avoid_: Auto-fill, paste, publish, auto-reply
+
+**Insertion Failure**:
+A typed Draft Insertion outcome surfaced to the popup as fixed copy: `editor-unavailable`, `route-changed`, `editor-not-empty`, `insert-failed`, or `wrong-tab`. The Generated Draft and its Copy action stay available on every failure.
+_Avoid_: Insert error string, silent no-op
 
 **Generation Error**:
 The provider-independent failure union surfaced to the popup as fixed copy: `provider-not-configured`, `api-key-missing`, `transmission-not-consented`, `invalid-preferences` (the selected tone/intent/length failed validation at the service-worker message boundary), `authentication-failed`, `rate-limited`, `request-timeout`, `network-error`, `provider-error`, `invalid-response`, `generation-cancelled`. Raw provider errors, HTTP status text, and response bodies are never surfaced.
