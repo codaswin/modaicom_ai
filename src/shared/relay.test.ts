@@ -17,7 +17,16 @@ describe('session relay contract', () => {
 
   it('validates tab-scoped relay records and keys', () => {
     expect(relayKey(42)).toBe('modaicom.relay.42')
-    expect(isSessionRelayRecord({ version: 2, result: { kind: 'cancelled' }, createdAt: 10, expiresAt: 20, generation: 1 })).toBe(true)
-    expect(isSessionRelayRecord({ version: 2, result: { kind: 'cancelled' }, createdAt: 10, expiresAt: 10, generation: 1 })).toBe(false)
+    expect(
+      isSessionRelayRecord({ version: 2, result: { kind: 'cancelled' }, createdAt: 10, expiresAt: 20, generation: 1, sessionId: 's-1' }),
+    ).toBe(true)
+    // expired
+    expect(
+      isSessionRelayRecord({ version: 2, result: { kind: 'cancelled' }, createdAt: 10, expiresAt: 10, generation: 1, sessionId: 's-1' }),
+    ).toBe(false)
+    // Phase 8: a record without sessionId is rejected (sheds pre-update records)
+    expect(
+      isSessionRelayRecord({ version: 2, result: { kind: 'cancelled' }, createdAt: 10, expiresAt: 20, generation: 1 }),
+    ).toBe(false)
   })
 })

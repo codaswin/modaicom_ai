@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { composerIsEligible, handlePagePopupExtractionRequest, isSupportedRoute, markRuntimeInvalidated, observationScopes, postCandidates, reconcile, teardownInlineTriggerContentScript, initializeInlineTriggerContentScript } from './inlineTrigger'
+import { composerIsEligible, handleInsertDraftRequest, handlePagePopupExtractionRequest, isSupportedRoute, markRuntimeInvalidated, observationScopes, postCandidates, reconcile, teardownInlineTriggerContentScript, initializeInlineTriggerContentScript } from './inlineTrigger'
 
 describe('inline trigger content boundary', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     teardownInlineTriggerContentScript()
+    Reflect.deleteProperty(document, 'execCommand')
     document.body.innerHTML = ''
   })
 
@@ -317,7 +318,11 @@ describe('inline trigger content boundary', () => {
     expect(owners.some((o) => o === 'comment-reply:urn:li:comment:(activity:1,10)')).toBe(true)
     // reply trigger sits next to the reply editor
     const replyEditor = main.querySelector('[aria-placeholder="Add a reply…"]')!
-    expect(replyEditor.nextElementSibling?.querySelector('button')?.getAttribute('aria-label')).toBe('modaicom — draft a reply')
+    const replyTrigger = replyEditor.nextElementSibling as HTMLElement
+    expect(replyTrigger.matches('[data-modaicom-inline-wrapper]')).toBe(true)
+    expect(replyTrigger.shadowRoot?.querySelector('button')?.getAttribute('aria-label')).toBe(
+      'Generate a reply with modaicom',
+    )
     main.remove()
   })
 
@@ -338,6 +343,126 @@ describe('inline trigger content boundary', () => {
       'comment-reply:urn:li:comment:(activity:1,20)',
     ])
     main.remove()
+  })
+
+  describe('INSERT_DRAFT', () => {
+    const DRAFT = 'A drafted reply.'
+    const MSG = (over: Record<string, unknown> = {}) => ({ version: 2, type: 'INSERT_DRAFT', text: DRAFT, sessionId: 's', generation: 1, ...over })
+
+    function stubExecCommand(editor: HTMLElement) {
+      Object.defineProperty(document, 'execCommand', {
+        configurable: true,
+        value: (cmd: string, _ui: boolean, val: string) => {
+          if (cmd !== 'insertText') return false
+          const sel = document.getSelection()
+          if (sel && sel.rangeCount > 0 && !sel.getRangeAt(0).collapsed) sel.getRangeAt(0).deleteContents()
+          editor.textContent = (editor.textContent ?? '') + String(val)
+          return true
+        },
+      })
+    }
+
+    async function startSession() {
+      const sendMessage = vi.fn().mockResolvedValue({ accepted: true })
+      vi.stubGlobal('chrome', { runtime: { id: 'ext', sendMessage, onMessage: { addListener: vi.fn() } } })
+      vi.stubGlobal('location', { href: ACTIVITY_URL })
+      teardownInlineTriggerContentScript()
+      initializeInlineTriggerContentScript()
+      const main = legacyPostWithComment()
+      reconcile(ACTIVITY_URL)
+      const wrapper = [...document.querySelectorAll('[data-modaicom-inline-wrapper]')].find((w) =>
+        (w as HTMLElement).dataset.modaicomOwner?.startsWith('post-comment:'),
+      ) as HTMLElement
+      const button = wrapper.shadowRoot?.querySelector('button') as HTMLButtonElement
+      button.dispatchEvent(new Event('click'))
+      await Promise.resolve()
+      await Promise.resolve()
+      const relayed = sendMessage.mock.calls
+        .map((c) => c[0] as Record<string, unknown>)
+        .find((m) => m.type === 'INLINE_EXTRACTION_RESULT')!
+      const editor = main.querySelector('[aria-label="Add a comment"]') as HTMLElement
+      return { editor, sessionId: relayed.sessionId as string, generation: relayed.generation as number }
+    }
+
+    afterEach(() => vi.unstubAllGlobals())
+
+    it('ignores a message that is not an INSERT_DRAFT envelope', () => {
+      expect(handleInsertDraftRequest({ version: 2, type: 'GET_LATEST_RELAY' })).toBeUndefined()
+      expect(handleInsertDraftRequest(null)).toBeUndefined()
+    })
+
+    it('inserts the draft into the exact editor when the session and route match', async () => {
+      const { editor, sessionId, generation } = await startSession()
+      stubExecCommand(editor)
+      expect(handleInsertDraftRequest(MSG({ sessionId, generation }))).toEqual({ ok: true })
+      expect(editor.textContent).toContain(DRAFT)
+    })
+
+    it('is an idempotent no-op when the editor already holds exactly this draft', async () => {
+      const { editor, sessionId, generation } = await startSession()
+      editor.textContent = DRAFT
+      stubExecCommand(editor)
+      expect(handleInsertDraftRequest(MSG({ sessionId, generation }))).toEqual({ ok: true })
+      expect(editor.textContent).toBe(DRAFT) // not doubled
+    })
+
+    it('refuses editor-not-empty when the box holds other text', async () => {
+      const { editor, sessionId, generation } = await startSession()
+      editor.textContent = 'Half a sentence I typed'
+      stubExecCommand(editor)
+      expect(handleInsertDraftRequest(MSG({ sessionId, generation }))).toEqual({ ok: false, reason: 'editor-not-empty' })
+      expect(editor.textContent).toBe('Half a sentence I typed')
+    })
+
+    it('replaces its own untouched prior insertion on a second Insert (Regenerate loop)', async () => {
+      const { editor, sessionId, generation } = await startSession()
+      stubExecCommand(editor)
+      expect(handleInsertDraftRequest(MSG({ sessionId, generation }))).toEqual({ ok: true })
+      expect(editor.textContent).toBe(DRAFT)
+
+      const NEXT = 'A regenerated, different reply.'
+      expect(handleInsertDraftRequest(MSG({ sessionId, generation, text: NEXT }))).toEqual({ ok: true })
+      expect(editor.textContent).toBe(NEXT) // replaced, not appended
+    })
+
+    it('refuses once the user has edited modaicom’s prior insertion', async () => {
+      const { editor, sessionId, generation } = await startSession()
+      stubExecCommand(editor)
+      handleInsertDraftRequest(MSG({ sessionId, generation }))
+      editor.textContent = `${DRAFT} — and a thought of my own`
+
+      expect(handleInsertDraftRequest(MSG({ sessionId, generation, text: 'Another draft.' }))).toEqual({
+        ok: false,
+        reason: 'editor-not-empty',
+      })
+    })
+
+    it.each([
+      ['a stale sessionId', (s: { sessionId: string; generation: number }) => ({ sessionId: 'other', generation: s.generation })],
+      ['a stale generation', (s: { sessionId: string; generation: number }) => ({ sessionId: s.sessionId, generation: s.generation + 5 })],
+    ])('refuses editor-unavailable for %s', async (_label, mutate) => {
+      const session = await startSession()
+      stubExecCommand(session.editor)
+      expect(handleInsertDraftRequest(MSG(mutate(session)))).toEqual({ ok: false, reason: 'editor-unavailable' })
+    })
+
+    it('refuses editor-unavailable when the stashed editor is gone', async () => {
+      const { editor, sessionId, generation } = await startSession()
+      editor.remove()
+      expect(handleInsertDraftRequest(MSG({ sessionId, generation }))).toEqual({ ok: false, reason: 'editor-unavailable' })
+    })
+
+    it('refuses route-changed when the page navigated since the trigger click', async () => {
+      const { sessionId, generation } = await startSession()
+      ;(location as unknown as { href: string }).href = 'https://www.linkedin.com/feed/'
+      expect(handleInsertDraftRequest(MSG({ sessionId, generation }))).toEqual({ ok: false, reason: 'route-changed' })
+    })
+
+    it('forgets the held editor when the trigger UI is torn down (shared with route-change cleanup)', async () => {
+      const { sessionId, generation } = await startSession()
+      teardownInlineTriggerContentScript()
+      expect(handleInsertDraftRequest(MSG({ sessionId, generation }))).toEqual({ ok: false, reason: 'editor-unavailable' })
+    })
   })
 
   it('suppresses any trigger on an SDUI reply composer (comment URN precedes the editor)', () => {

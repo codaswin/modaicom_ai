@@ -47,6 +47,18 @@ describe('service-worker relay ordering', () => {
     expect(store.has(relayKey(1))).toBe(false)
   })
 
+  it('returns the result plus the originating session id and generation to the popup', async () => {
+    const store = new Map<string, unknown>()
+    setupChrome(store)
+    const { handleRelayMessage, readAndClearRelay } = await import('./serviceWorker')
+    const tabSender = { id: 'extension', tab: { id: 1 } } as chrome.runtime.MessageSender
+    await handleRelayMessage(
+      { version: 2, type: 'INLINE_EXTRACTION_RESULT', sessionId: 'sess-abc', generation: 5, result },
+      tabSender,
+    )
+    expect(await readAndClearRelay(1)).toEqual({ result, sessionId: 'sess-abc', generation: 5 })
+  })
+
   it('clears expired generation metadata during relay reads', async () => {
     const store = new Map<string, unknown>()
     const session = setupChrome(store)

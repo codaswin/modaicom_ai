@@ -4,19 +4,40 @@ import { commentOwningPost, commentStableIdentity, isValidatedCommentRoot, legac
 import { postExtractionToInteractionResult, type InteractionExtractionResult } from '../features/linkedin-context/interactionContext'
 import { classifyLinkedInRoute } from '../features/linkedin-context/routes'
 import { FEED_CONTAINER_SELECTOR, FEED_POST_ROOT_SELECTOR, POST_ROOT_SELECTOR, feedMarkupRegime, isValidatedPostRoot, stablePostIdentity, postRootVariant, feedContainerVariant } from '../features/linkedin-context/postAdapter'
-import { RELAY_VERSION } from '../shared/relay'
-import { isRequestPageExtractionMessage } from '../shared/protocol'
+import { RELAY_TTL_MS, RELAY_VERSION } from '../shared/relay'
+import { isInsertDraftMessage, isRequestPageExtractionMessage, type InsertDraftResponse } from '../shared/protocol'
 import { EDITOR_SELECTOR, classifyComposer, isEligibleCommentComposer, looksLikeReplyComposer } from './composerAdapter'
 import { recordDiagnostic } from './diagnostics'
+import { editorPlainText, insertDraft } from './insertDraft'
+import { OWNED_WRAPPER_ATTR, createInlineTrigger, type InlineTriggerHandle } from './triggerButton'
 
 type ResolvedTarget =
-  | { kind: 'post-comment'; postElement: HTMLElement; key: string }
-  | { kind: 'comment-reply'; postElement: HTMLElement; commentElement: HTMLElement; key: string }
+  | { kind: 'post-comment'; postElement: HTMLElement; editor: HTMLElement; key: string }
+  | { kind: 'comment-reply'; postElement: HTMLElement; commentElement: HTMLElement; editor: HTMLElement; key: string }
 
-const OWNED_WRAPPER = 'data-modaicom-inline-wrapper'
+// The exact editor the user's trigger click pointed at, held for the whole
+// Inline Targeting Session so a later INSERT_DRAFT can write into it — and only
+// it (Phase 8 / ADR-0011). Cleared on route change, a fresh trigger click, the
+// relay TTL, or teardown.
+type InsertSession = {
+  editor: HTMLElement
+  kind: ResolvedTarget['kind']
+  sessionId: string
+  generation: number
+  route: string
+  stashedAt: number
+  // The exact text modaicom last inserted here, so a later Regenerate + Insert
+  // can replace an untouched prior insertion (and only that).
+  lastInserted?: string
+}
+let insertSession: InsertSession | undefined
+function clearInsertSession(): void {
+  insertSession = undefined
+}
+
+const OWNED_WRAPPER = OWNED_WRAPPER_ATTR
 const OWNER_TOKEN = 'data-modaicom-inline-target'
 const COMMENT_TOKEN = 'data-modaicom-inline-comment-target'
-const BUSY = 'data-modaicom-inline-busy'
 let generation = 0
 const sessionId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `session-${Math.random().toString(36).slice(2)}`
 let observer: MutationObserver | undefined
@@ -57,6 +78,9 @@ function owningPost(editor: HTMLElement, urlString = location.href): HTMLElement
   return !isFeedRoute(urlString) && candidates.length === 1 && sole ? (sole.contains(editor) ? sole : undefined) : undefined
 }
 function removeOwnedUi(): void {
+  // Every caller (route change, unsupported route, runtime invalidation,
+  // teardown) also ends any Inline Targeting Session, so the held editor goes too.
+  clearInsertSession()
   document.querySelectorAll(`[${OWNED_WRAPPER}]`).forEach((node) => node.remove())
   document.querySelectorAll(`[${OWNER_TOKEN}]`).forEach((node) => node.removeAttribute(OWNER_TOKEN))
   document.querySelectorAll(`[${COMMENT_TOKEN}]`).forEach((node) => node.removeAttribute(COMMENT_TOKEN))
@@ -74,7 +98,7 @@ function resolveTarget(editor: HTMLElement, urlString = location.href): Resolved
   }
   if (kind === 'post-comment') {
     const post = owningPost(editor, urlString)
-    return post ? { kind, postElement: post, key: `post-comment:${ownerKey(post)}` } : undefined
+    return post ? { kind, postElement: post, editor, key: `post-comment:${ownerKey(post)}` } : undefined
   }
   const comment = legacyCommentRoot(editor)
   if (!comment || !isValidatedCommentRoot(comment)) return undefined
@@ -85,7 +109,7 @@ function resolveTarget(editor: HTMLElement, urlString = location.href): Resolved
   }
   const id = commentStableIdentity(comment)
   if (!id) return undefined
-  return { kind, postElement: post, commentElement: comment, key: `comment-reply:${id}` }
+  return { kind, postElement: post, commentElement: comment, editor, key: `comment-reply:${id}` }
 }
 
 function insertTrigger(editor: HTMLElement, target: ResolvedTarget): void {
@@ -93,27 +117,20 @@ function insertTrigger(editor: HTMLElement, target: ResolvedTarget): void {
   if (Array.from(document.querySelectorAll<HTMLElement>(`[${OWNED_WRAPPER}]`)).some((node) => node.dataset.modaicomOwner === key)) return
   const stage = isFeedRoute() ? 'feed' : 'individual'
   recordDiagnostic({ stage, event: 'trigger-insertion', insertionAttempted: true })
-  const wrapper = document.createElement('span')
-  wrapper.dataset.modaicomInlineWrapper = ''
-  wrapper.dataset.modaicomOwner = key
-  const button = document.createElement('button')
-  button.type = 'button'
-  button.textContent = 'modaicom'
-  button.setAttribute('aria-label', target.kind === 'comment-reply' ? 'modaicom — draft a reply' : 'modaicom — draft a comment')
-  button.addEventListener('click', (event) => runInlineExtraction(event, button, target))
-  wrapper.append(button)
-  editor.insertAdjacentElement('afterend', wrapper)
+  const trigger = createInlineTrigger(target.kind, key, (event) => runInlineExtraction(event, trigger, target))
+  editor.insertAdjacentElement('afterend', trigger.host)
 }
 
-function runInlineExtraction(event: Event, button: HTMLButtonElement, target: ResolvedTarget): void {
+function runInlineExtraction(event: Event, trigger: InlineTriggerHandle, target: ResolvedTarget): void {
   event.preventDefault()
   event.stopPropagation()
   const owner = target.postElement
-  if (button.disabled || !owner.isConnected || !isSupportedRoute()) return
-  button.disabled = true
-  button.setAttribute(BUSY, '')
+  if (trigger.busy || !owner.isConnected || !isSupportedRoute()) return
+  trigger.setBusy(true)
   const clickGeneration = generation + 1
   generation = clickGeneration
+  // Hold the exact editor for this session so a later Insert writes only here.
+  insertSession = { editor: target.editor, kind: target.kind, sessionId, generation: clickGeneration, route: location.href, stashedAt: Date.now() }
   owner.setAttribute(OWNER_TOKEN, String(clickGeneration))
   if (target.kind === 'comment-reply') target.commentElement.setAttribute(COMMENT_TOKEN, String(clickGeneration))
   const stage = classifyLinkedInRoute(location.href) === 'feed' ? 'feed' : 'individual'
@@ -135,8 +152,7 @@ function runInlineExtraction(event: Event, button: HTMLButtonElement, target: Re
   else if (commentStale) result = { kind: 'comment-stale-target' }
   owner.removeAttribute(OWNER_TOKEN)
   if (target.kind === 'comment-reply') target.commentElement.removeAttribute(COMMENT_TOKEN)
-  button.disabled = false
-  button.removeAttribute(BUSY)
+  trigger.setBusy(false)
   recordDiagnostic({ stage, event: 'extraction', extractionOutcome: result.kind, authorFieldFound: result.kind === 'success', authoredBodyFieldFound: result.kind === 'success', normalizationSucceeded: result.kind === 'success' })
 
   if (runtimeInvalidated || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
@@ -233,13 +249,60 @@ export function handlePagePopupExtractionRequest(message: unknown): InteractionE
     return { kind: 'unexpected-error' }
   }
 }
+// Insert a Generated Draft into the exact editor held for the current Inline
+// Targeting Session (Phase 8 / ADR-0011). Never re-resolves an editor; refuses
+// unless the session, route, and exact node all still line up. The draft text
+// is never logged.
+type ContentInsertRefusal = 'editor-unavailable' | 'route-changed' | 'editor-not-empty' | 'insert-failed'
+
+export function handleInsertDraftRequest(message: unknown): InsertDraftResponse | undefined {
+  if (!isInsertDraftMessage(message)) return undefined
+  const stage = isFeedRoute() ? 'feed' : 'individual'
+  const refuse = (reason: ContentInsertRefusal): InsertDraftResponse => {
+    recordDiagnostic({ stage, event: 'insertion', extractionOutcome: reason })
+    return { ok: false, reason }
+  }
+  if (runtimeInvalidated) return refuse('editor-unavailable')
+
+  const session = insertSession
+  if (!session || session.sessionId !== message.sessionId || session.generation !== message.generation) {
+    return refuse('editor-unavailable')
+  }
+  if (Date.now() - session.stashedAt > RELAY_TTL_MS) {
+    clearInsertSession()
+    return refuse('editor-unavailable')
+  }
+  if (location.href !== session.route) return refuse('route-changed')
+  if (!session.editor.isConnected || classifyComposer(session.editor) !== session.kind) {
+    return refuse('editor-unavailable')
+  }
+
+  // A repeat Insert of the identical draft into an untouched editor is a no-op.
+  if (editorPlainText(session.editor) === message.text.trim()) {
+    recordDiagnostic({ stage, event: 'insertion', extractionOutcome: 'noop' })
+    return { ok: true }
+  }
+
+  const outcome = insertDraft(session.editor, message.text, { previousInsertion: session.lastInserted })
+  if (outcome.ok) session.lastInserted = editorPlainText(session.editor)
+  recordDiagnostic({ stage, event: 'insertion', extractionOutcome: outcome.ok ? 'success' : outcome.reason })
+  return outcome
+}
+
 if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if (sender.id && chrome.runtime?.id && sender.id !== chrome.runtime.id) return false
-    const result = handlePagePopupExtractionRequest(message)
-    if (result === undefined) return false
-    sendResponse(result)
-    return true
+    const extraction = handlePagePopupExtractionRequest(message)
+    if (extraction !== undefined) {
+      sendResponse(extraction)
+      return true
+    }
+    const insertion = handleInsertDraftRequest(message)
+    if (insertion !== undefined) {
+      sendResponse(insertion)
+      return true
+    }
+    return false
   })
 }
 if (typeof document !== 'undefined') initializeInlineTriggerContentScript()

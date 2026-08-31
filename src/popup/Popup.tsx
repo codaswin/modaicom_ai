@@ -14,11 +14,17 @@ import {
 } from '../features/generation/preferences'
 import { isRetryableGenerationError, type GenerationErrorKind } from '../features/generation/types'
 import { isSupportedFeedUrl } from '../features/linkedin-context/routes'
-import { GENERATION_PROTOCOL_VERSION } from '../shared/protocol'
+import { GENERATION_PROTOCOL_VERSION, type InsertFailureKind } from '../shared/protocol'
 import { RELAY_VERSION } from '../shared/relay'
 import { readPreferences, writePreferences } from './preferencesStore'
 import { useGeneration, type UseGeneration } from './useGeneration'
+import { useInsert, type UseInsert } from './useInsert'
 import './popup.css'
+
+// The Inline Targeting Session a relayed context belongs to. Present only for
+// the inline-trigger path; the popup's individual-post fallback has no session
+// and therefore no Insert.
+type RelaySession = { sessionId: string; generation: number }
 
 type ProviderStatus = { configured: boolean; providerId?: string; model?: string; consented: boolean }
 // `{ reachable: false }` means the GET_PROVIDER_STATUS round-trip to the service
@@ -133,13 +139,57 @@ function InteractionView({ context }: { context: LinkedInInteractionContext }) {
   )
 }
 
-function DraftView({ text, onRegenerate }: { text: string; onRegenerate: () => void }) {
+const insertErrorMessages = {
+  'editor-unavailable': 'That comment box is no longer available. Click the modaicom button again on the post you want.',
+  'route-changed': 'You’ve navigated away since starting. Go back to that post and click the modaicom button again.',
+  'editor-not-empty': 'Your comment box already has text. Clear it, or use Copy.',
+  'insert-failed': 'modaicom couldn’t insert the draft. Use Copy instead.',
+  'wrong-tab': 'Switch to the LinkedIn tab where you started, then Insert.',
+} satisfies Record<InsertFailureKind, string>
+
+function DraftView({
+  text,
+  session,
+  ins,
+  insertedOnce,
+  onRegenerate,
+}: {
+  text: string
+  session: RelaySession | null
+  ins: UseInsert
+  insertedOnce: boolean
+  onRegenerate: () => void
+}) {
   const [copied, setCopied] = useState(false)
+  const canInsert = Boolean(session?.sessionId)
+  const runInsert = () => {
+    if (session?.sessionId) ins.insert({ text, sessionId: session.sessionId, generation: session.generation })
+  }
+
+  if (ins.state.phase === 'done') {
+    return (
+      <div className="draft">
+        <p className="generation__hint" role="status">
+          Inserted into your LinkedIn comment box — review it and click LinkedIn’s Post button when you’re ready.
+        </p>
+        <button className="retry-button" onClick={onRegenerate}>Regenerate</button>
+      </div>
+    )
+  }
+
+  const insertLabel = ins.state.phase === 'inserting' ? 'Inserting…' : insertedOnce ? 'Replace with new draft' : 'Insert'
+
   return (
     <div className="draft">
       <label className="draft__label" htmlFor="modaicom-draft">Suggested draft</label>
       <textarea id="modaicom-draft" className="draft__text" readOnly value={text} rows={6} />
+      {ins.state.phase === 'error' && <p className="generation__error">{insertErrorMessages[ins.state.reason]}</p>}
       <div className="draft__actions">
+        {canInsert && (
+          <button className="retry-button" onClick={runInsert} disabled={ins.state.phase === 'inserting'}>
+            {insertLabel}
+          </button>
+        )}
         <button className="retry-button" onClick={() => { void navigator.clipboard?.writeText(text).then(() => setCopied(true)) }}>
           {copied ? 'Copied ✓' : 'Copy'}
         </button>
@@ -255,19 +305,25 @@ function ResponseControls({ prefs, update }: Pick<UsePreferences, 'prefs' | 'upd
 function GenerationPanel({
   context,
   status,
+  session,
   gen,
   onRetryStatus,
 }: {
   context: LinkedInInteractionContext
   status: ProviderStatusResult | null
+  session: RelaySession | null
   gen: UseGeneration
   onRetryStatus: () => void
 }) {
   const preferences = usePreferences()
+  const [insertedOnce, setInsertedOnce] = useState(false)
+  const ins = useInsert(() => setInsertedOnce(true))
   const request = contextToGenerationRequest(context)
   // Only ever generates with the current, hydrated selection (ADR-0010).
   const run = () => {
-    if (preferences.ready) gen.generate(request, preferences.prefs)
+    if (!preferences.ready) return
+    if (ins.state.phase !== 'idle') ins.reset()
+    gen.generate(request, preferences.prefs)
   }
 
   if (status !== null && !isProviderStatus(status)) {
@@ -305,7 +361,9 @@ function GenerationPanel({
       {state.phase === 'generating' && (
         <><p className="generation__hint" role="status">Drafting…</p><button className="retry-button" onClick={gen.cancel}>Stop</button></>
       )}
-      {state.phase === 'done' && <DraftView text={state.text} onRegenerate={run} />}
+      {state.phase === 'done' && (
+        <DraftView text={state.text} session={session} ins={ins} insertedOnce={insertedOnce} onRegenerate={run} />
+      )}
       {state.phase === 'error' && (
         <>
           <p className="generation__error">{generationErrorMessages[state.kind]}</p>
@@ -323,6 +381,7 @@ export function Popup() {
   const [contextResult, setContextResult] = useState<ContextState | null>(null)
   const [isFeed, setIsFeed] = useState(false)
   const [providerStatus, setProviderStatus] = useState<ProviderStatusResult | null>(null)
+  const [session, setSession] = useState<RelaySession | null>(null)
   const gen = useGeneration()
   const { reset: resetGeneration } = gen
 
@@ -335,10 +394,17 @@ export function Popup() {
     }
   }
 
-  const readRelay = async (): Promise<InteractionExtractionResult | null> => {
+  const readRelay = async (): Promise<{ result: InteractionExtractionResult; session: RelaySession | null } | null> => {
     try {
-      const relayResult: unknown = await chrome.runtime.sendMessage({ version: RELAY_VERSION, type: 'GET_LATEST_RELAY' })
-      return isInteractionExtractionResult(relayResult) ? relayResult : null
+      const reply: unknown = await chrome.runtime.sendMessage({ version: RELAY_VERSION, type: 'GET_LATEST_RELAY' })
+      // Pre-Phase-8 service worker: a bare result, no session.
+      if (isInteractionExtractionResult(reply)) return { result: reply, session: null }
+      if (reply && typeof reply === 'object' && isInteractionExtractionResult((reply as { result?: unknown }).result)) {
+        const r = reply as { result: InteractionExtractionResult; sessionId?: unknown; generation?: unknown }
+        const hasSession = typeof r.sessionId === 'string' && r.sessionId.length > 0 && typeof r.generation === 'number'
+        return { result: r.result, session: hasSession ? { sessionId: r.sessionId as string, generation: r.generation as number } : null }
+      }
+      return null
     } catch {
       return null
     }
@@ -348,6 +414,7 @@ export function Popup() {
     setResult(null)
     setContextResult(null)
     setIsFeed(false)
+    setSession(null)
     resetGeneration()
     try {
       const status: unknown = await chrome.runtime.sendMessage({ v: GENERATION_PROTOCOL_VERSION, type: 'GET_PROVIDER_STATUS' })
@@ -374,7 +441,8 @@ export function Popup() {
     setContextResult({ kind: 'context-loading' })
     const relay = await readRelay()
     if (relay) {
-      setContextResult(relay)
+      setContextResult(relay.result)
+      setSession(relay.session)
     } else if (feed) {
       setContextResult({ kind: 'unsupported-surface' })
     } else {
@@ -401,7 +469,7 @@ export function Popup() {
         {context.kind === 'context-loading' ? <p className="context-panel__message">Reading LinkedIn context…</p> :
           context.kind === 'success' ? <>
             <InteractionView context={context.context} />
-            <GenerationPanel context={context.context} status={providerStatus} gen={gen} onRetryStatus={load} />
+            <GenerationPanel context={context.context} status={providerStatus} session={session} gen={gen} onRetryStatus={load} />
           </> :
           <><p className="context-panel__message">{showNeutralFeed ? 'Select a LinkedIn post to continue.' : contextMessages[context.kind]}</p>{canRetryContext ? <ActionButton label="Retry" onClick={load} /> : null}</>}
       </section> : null}

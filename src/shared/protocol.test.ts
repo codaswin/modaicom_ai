@@ -6,6 +6,8 @@ import {
   isGenerationOneShotMessage,
   isGenerationPortMessage,
   isGenerationResultMessage,
+  isInsertDraftMessage,
+  isInsertFailureKind,
   isRequestPageExtractionMessage,
 } from './protocol'
 
@@ -28,6 +30,36 @@ describe('isRequestPageExtractionMessage', () => {
     { version: '1', type: 'REQUEST_PAGE_EXTRACTION' },
   ])('rejects malformed value %j', (value) => {
     expect(isRequestPageExtractionMessage(value)).toBe(false)
+  })
+})
+
+describe('isInsertDraftMessage', () => {
+  const base = { version: 2, type: 'INSERT_DRAFT', text: 'A drafted reply.', sessionId: 's-1', generation: 3 }
+
+  it('accepts the canonical envelope', () => {
+    expect(isInsertDraftMessage(base)).toBe(true)
+    expect(isInsertDraftMessage({ ...base, generation: 0 })).toBe(true)
+  })
+
+  it.each([
+    ['wrong version', { ...base, version: 1 }],
+    ['wrong type', { ...base, type: 'INSERT' }],
+    ['empty text', { ...base, text: '' }],
+    ['non-string text', { ...base, text: 42 }],
+    ['empty sessionId', { ...base, sessionId: '' }],
+    ['missing generation', { version: 2, type: 'INSERT_DRAFT', text: 'x', sessionId: 's' }],
+    ['non-finite generation', { ...base, generation: Number.NaN }],
+    ['null', null],
+  ])('rejects %s', (_label, value) => {
+    expect(isInsertDraftMessage(value)).toBe(false)
+  })
+
+  it('recognises every insert failure kind', () => {
+    for (const kind of ['editor-unavailable', 'route-changed', 'editor-not-empty', 'insert-failed', 'wrong-tab']) {
+      expect(isInsertFailureKind(kind)).toBe(true)
+    }
+    expect(isInsertFailureKind('nope')).toBe(false)
+    expect(isInsertFailureKind(undefined)).toBe(false)
   })
 })
 
