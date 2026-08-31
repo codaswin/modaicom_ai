@@ -73,6 +73,75 @@ describe('xAI preset', () => {
   })
 })
 
+describe('Gemini preset — split endpoints', () => {
+  it('generates via the OpenAI-compat endpoint with a bearer token', async () => {
+    let seenUrl = ''
+    let seenInit: RequestInit = {}
+    fetchMock.mockImplementation((url: string, init: RequestInit) => {
+      seenUrl = url
+      seenInit = init
+      return Promise.resolve(
+        new Response(JSON.stringify({ choices: [{ message: { content: 'x' } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await getProvider('gemini')!.generate(
+      { system: 'S', user: 'U' },
+      { model: 'gemini-2.0-flash', apiKey: 'AIza-x', signal: new AbortController().signal },
+    )
+    expect(seenUrl).toBe('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions')
+    expect((seenInit.headers as Record<string, string>).authorization).toBe('Bearer AIza-x')
+  })
+
+  it('lists via the native endpoint with x-goog-api-key, stripping the models/ prefix and filtering to generateContent', async () => {
+    let seenUrl = ''
+    let seenInit: RequestInit = {}
+    fetchMock.mockImplementation((url: string, init: RequestInit) => {
+      seenUrl = url
+      seenInit = init
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            models: [
+              {
+                name: 'models/gemini-2.0-flash',
+                displayName: 'Gemini 2.0 Flash',
+                supportedGenerationMethods: ['generateContent', 'countTokens'],
+              },
+              {
+                name: 'models/text-embedding-004',
+                displayName: 'Embedding 004',
+                supportedGenerationMethods: ['embedContent'],
+              },
+              {
+                name: 'models/gemini-1.0-pro-vision',
+                supportedGenerationMethods: ['generateContent'],
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await getProvider('gemini')!.listModels({ apiKey: 'AIza-x', signal: new AbortController().signal })
+
+    expect(seenUrl).toBe('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000')
+    expect((seenInit.headers as Record<string, string>)['x-goog-api-key']).toBe('AIza-x')
+    expect((seenInit.headers as Record<string, string>).authorization).toBeUndefined()
+    expect(result).toEqual({
+      ok: true,
+      models: [
+        { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+        { id: 'gemini-1.0-pro-vision' },
+      ],
+    })
+  })
+})
+
 describe('every OpenAI-shaped preset', () => {
   it.each([OPENAI_PRESET, GROQ_PRESET, XAI_PRESET])('$id: bearer auth, /models list, non-empty fallback list', (preset) => {
     expect(preset.keyAuth).toBe('bearer')

@@ -104,5 +104,50 @@ export const ANTHROPIC_PRESET: ProviderPreset = {
   ],
 }
 
+// Gemini generates through its OpenAI-compatibility endpoint (shared transport)
+// but lists and tests through its NATIVE endpoint — only the native list carries
+// `supportedGenerationMethods` and `displayName`, which is what filtering needs.
+// `name` is `models/<id>`; the prefix is stripped so the persisted value is the
+// bare stable id the API's `model` field wants.
+function parseGeminiModels(body: unknown): RawModelRecord[] {
+  const models = (body as { models?: unknown })?.models
+  if (!Array.isArray(models)) return []
+  return models
+    .filter((row): row is { name: string; displayName?: string; supportedGenerationMethods?: string[] } =>
+      typeof (row as { name?: unknown }).name === 'string',
+    )
+    .map((row) => ({
+      id: row.name.replace(/^models\//, ''),
+      ...(row.displayName ? { label: row.displayName } : {}),
+      methods: Array.isArray(row.supportedGenerationMethods) ? row.supportedGenerationMethods : [],
+    }))
+}
+
+export const GEMINI_PRESET: ProviderPreset = {
+  id: 'gemini',
+  label: 'Google Gemini',
+  baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  host: 'https://generativelanguage.googleapis.com/*',
+  keyAuth: 'bearer',
+  listModels: {
+    path: 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000',
+    keyAuth: 'x-goog-api-key',
+    parse: parseGeminiModels,
+  },
+  modelFilter: { requireMethod: 'generateContent', deny: [/embedding/, /aqa/, /gemma/] },
+  fallbackModels: [
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+  ],
+}
+
 // Registration order = display order in the provider dropdown.
-export const PROVIDER_PRESETS: readonly ProviderPreset[] = [OPENAI_PRESET, GROQ_PRESET, XAI_PRESET, ANTHROPIC_PRESET]
+export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
+  OPENAI_PRESET,
+  GROQ_PRESET,
+  XAI_PRESET,
+  ANTHROPIC_PRESET,
+  GEMINI_PRESET,
+]
