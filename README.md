@@ -14,6 +14,9 @@
   [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](tsconfig.json)
   [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)](LICENSE)
 
+  [![LinkedIn](https://img.shields.io/badge/LinkedIn-Aswin-0A66C2?style=flat-square&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/aswin-s-1a3026346/)
+  [![GitHub](https://img.shields.io/badge/GitHub-codaswin-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/codaswin)
+
   [Download v1](https://github.com/codaswin/modaicom_ai/releases/latest) ·
   [How it works](#how-it-works) ·
   [Privacy](#privacy-by-design) ·
@@ -165,13 +168,6 @@ Issues and pull requests are welcome. Before changing LinkedIn adapters or priva
 4. Run `npm run check` before opening a pull request.
 
 Please use [GitHub Issues](https://github.com/codaswin/modaicom_ai/issues) for bugs and feature discussions.
-
-## Creator
-
-Built by **Aswin**.
-
-- [LinkedIn](https://www.linkedin.com/in/aswin-s-1a3026346/)
-- [GitHub](https://github.com/codaswin)
 
 ## License
 
