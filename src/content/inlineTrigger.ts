@@ -112,19 +112,53 @@ function resolveTarget(editor: HTMLElement, urlString = location.href): Resolved
   return { kind, postElement: post, commentElement: comment, editor, key: `comment-reply:${id}` }
 }
 
-// LinkedIn's comment/reply action row always carries an emoji-picker button
-// whose accessible label mentions "emoji". We climb a few levels from the editor
-// and take the emoji button in the nearest containing ancestor — that is this
-// composer's, not a neighbour's. If the label ever changes we get nothing and
-// fall back to placing the trigger after the editor.
-function findEmojiButton(editor: HTMLElement): HTMLElement | undefined {
-  let scope: HTMLElement | null = editor
-  for (let depth = 0; depth < 5 && scope; depth += 1) {
-    const button = scope.querySelector<HTMLElement>('button[aria-label*="emoji" i]')
-    if (button && !button.closest(`[${OWNED_WRAPPER}]`)) return button
-    scope = scope.parentElement
+// Does this control (or a labelled descendant) look like the emoji / GIF / photo
+// action? Checks the accessible label, title, data-view-name, and — for the
+// text-only "GIF" button — the visible text.
+function controlHint(el: HTMLElement, re: RegExp): boolean {
+  if (
+    re.test(el.getAttribute('aria-label') ?? '') ||
+    re.test(el.getAttribute('title') ?? '') ||
+    re.test(el.dataset.viewName ?? '') ||
+    re.test(el.textContent ?? '')
+  ) {
+    return true
   }
-  return undefined
+  return Array.from(el.querySelectorAll<HTMLElement>('[aria-label],[title],[data-view-name]')).some(
+    (k) =>
+      re.test(k.getAttribute('aria-label') ?? '') ||
+      re.test(k.getAttribute('title') ?? '') ||
+      re.test(k.dataset.viewName ?? ''),
+  )
+}
+
+// Put the trigger in the comment/reply action row, left of the emoji button.
+// LinkedIn's markup shifts, so we identify the row by its emoji / GIF / photo
+// controls rather than a class. Returns false when no such row is found, so the
+// caller can fall back to placing the trigger after the editor.
+function dockTriggerInActionRow(editor: HTMLElement, host: HTMLElement): boolean {
+  const bound =
+    editor.closest<HTMLElement>('form') ??
+    editor.closest<HTMLElement>('.comments-comment-box, .comments-comment-texteditor, [data-testid="comment-composer"], [data-view-name="comment-box"]') ??
+    editor.parentElement?.parentElement ??
+    editor.parentElement
+  if (!bound) return false
+  const controls = Array.from(bound.querySelectorAll<HTMLElement>('button, [role="button"]')).filter(
+    (c) => !c.closest(`[${OWNED_WRAPPER}]`) && !c.contains(editor),
+  )
+  const emoji = controls.find((c) => controlHint(c, /emoji/i))
+  if (emoji?.parentElement) {
+    emoji.parentElement.insertBefore(host, emoji)
+    return true
+  }
+  const other =
+    controls.find((c) => controlHint(c, /\bgif\b/i)) ??
+    controls.find((c) => controlHint(c, /\b(photo|image|media)\b/i))
+  if (other?.parentElement) {
+    other.parentElement.insertBefore(host, other.parentElement.firstChild)
+    return true
+  }
+  return false
 }
 
 function insertTrigger(editor: HTMLElement, target: ResolvedTarget): void {
@@ -133,10 +167,7 @@ function insertTrigger(editor: HTMLElement, target: ResolvedTarget): void {
   const stage = isFeedRoute() ? 'feed' : 'individual'
   recordDiagnostic({ stage, event: 'trigger-insertion', insertionAttempted: true })
   const trigger = createInlineTrigger(target.kind, key, (event) => runInlineExtraction(event, trigger, target))
-  const emojiButton = findEmojiButton(editor)
-  if (emojiButton?.parentElement) {
-    emojiButton.parentElement.insertBefore(trigger.host, emojiButton)
-  } else {
+  if (!dockTriggerInActionRow(editor, trigger.host)) {
     editor.insertAdjacentElement('afterend', trigger.host)
   }
 }

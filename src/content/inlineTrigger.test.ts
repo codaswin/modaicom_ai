@@ -355,7 +355,29 @@ describe('inline trigger content boundary', () => {
     main.remove()
   })
 
-  it('falls back to placing the trigger after the editor when no emoji button is found', () => {
+  it('docks into the action group even when only the GIF button is identifiable', () => {
+    const main = document.createElement('main')
+    main.innerHTML = `
+      <div class="feed-shared-update-v2" data-urn="urn:li:activity:1">
+        <div data-testid="post-body">Post body.</div>
+        <div class="comments-comment-box">
+          <div contenteditable="true" aria-label="Add a comment"></div>
+          <div class="editor-actions">
+            <button type="button"><svg></svg></button>
+            <button type="button">GIF</button>
+            <button type="button" aria-label="Add media"></button>
+          </div>
+        </div>
+      </div>`
+    document.body.append(main)
+    reconcile(ACTIVITY_URL)
+
+    const group = main.querySelector('.editor-actions') as HTMLElement
+    expect((group.firstElementChild as HTMLElement).matches('[data-modaicom-inline-wrapper]')).toBe(true)
+    main.remove()
+  })
+
+  it('falls back to placing the trigger after the editor when no action row is found', () => {
     const main = legacyPostWithComment()
     reconcile(ACTIVITY_URL)
     const editor = main.querySelector('[aria-label="Add a comment"]') as HTMLElement
