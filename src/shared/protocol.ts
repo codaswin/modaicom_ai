@@ -77,9 +77,12 @@ export function isInsertFailureKind(value: unknown): value is InsertFailureKind 
 // ---------------------------------------------------------------------------
 
 // v2 (Phase 7 / ADR-0010): REQUEST_GENERATION carries the selected
-// { tone, intent, length } as a `preferences` field. Popup, options page, and
-// service worker ship in one build, so the bump is a clean lockstep cutover.
-export const GENERATION_PROTOCOL_VERSION = 2 as const
+// { tone, intent, length } as a `preferences` field.
+// v3 (Phase 9 / ADR-0012): TEST_PROVIDER (a real ping generation) is replaced by
+// TEST_AND_LIST (a zero-token metadata call that validates the key and returns
+// the provider's models). Popup, options page, and service worker ship in one
+// build, so the bump is a clean lockstep cutover.
+export const GENERATION_PROTOCOL_VERSION = 3 as const
 export const GENERATION_PORT_NAME = 'modaicom.generation'
 
 // Port (popup <-> service worker), request-scoped.
@@ -108,8 +111,20 @@ export type RecordConsentMessage = {
   type: 'RECORD_TRANSMISSION_CONSENT'
   providerId: string
 }
-export type TestProviderMessage = { v: typeof GENERATION_PROTOCOL_VERSION; type: 'TEST_PROVIDER' }
-export type GenerationOneShotMessage = GetProviderStatusMessage | RecordConsentMessage | TestProviderMessage
+// Options-page -> service-worker only. Carries the key transiently for one
+// validate-before-save round trip; the SW never persists a key from a message
+// (ADR-0008 amendment). The reply is a ConnectionTestResult (see below).
+export type TestAndListMessage = {
+  v: typeof GENERATION_PROTOCOL_VERSION
+  type: 'TEST_AND_LIST'
+  providerId: string
+  apiKey: string
+}
+export type GenerationOneShotMessage = GetProviderStatusMessage | RecordConsentMessage | TestAndListMessage
+
+export type ConnectionTestResult =
+  | { ok: true; models: { id: string; label?: string }[]; modelSource: 'live' | 'fallback' }
+  | { ok: false; error: { kind: string; retryAfterMs?: number } }
 
 function hasGenerationVersion(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && (value as Record<string, unknown>).v === GENERATION_PROTOCOL_VERSION
@@ -123,8 +138,17 @@ export function isGenerationPortMessage(value: unknown): value is GenerationPort
 
 export function isGenerationOneShotMessage(value: unknown): value is GenerationOneShotMessage {
   if (!hasGenerationVersion(value)) return false
-  if (value.type === 'GET_PROVIDER_STATUS' || value.type === 'TEST_PROVIDER') return true
-  return value.type === 'RECORD_TRANSMISSION_CONSENT' && typeof value.providerId === 'string' && value.providerId.length > 0
+  if (value.type === 'GET_PROVIDER_STATUS') return true
+  if (value.type === 'RECORD_TRANSMISSION_CONSENT') {
+    return typeof value.providerId === 'string' && value.providerId.length > 0
+  }
+  return (
+    value.type === 'TEST_AND_LIST' &&
+    typeof value.providerId === 'string' &&
+    value.providerId.length > 0 &&
+    typeof value.apiKey === 'string' &&
+    value.apiKey.length > 0
+  )
 }
 
 export function isGenerationResultMessage(value: unknown): value is GenerationResultMessage {

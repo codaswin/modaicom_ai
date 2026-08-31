@@ -13,6 +13,9 @@ export type GenerationErrorKind =
   | 'provider-error'
   | 'invalid-response'
   | 'generation-cancelled'
+  // Phase 9 (ADR-0012): a generation-time 404 / model-not-found. Non-retryable —
+  // the popup routes it to settings, where the user picks another model.
+  | 'model-not-available'
 
 export type GenerationError = { kind: GenerationErrorKind; retryAfterMs?: number }
 
@@ -23,7 +26,6 @@ export type GenerationInput = { system: string; user: string }
 export type GenerateOptions = {
   model: string
   apiKey: string
-  baseUrl?: string
   signal: AbortSignal
   // Provider-neutral sampling knobs (ADR-0010). `maxTokens` is a cost / runaway
   // backstop, not the length mechanism (that is the prompt). A provider maps
@@ -32,11 +34,26 @@ export type GenerateOptions = {
   maxTokens?: number
 }
 
+// The endpoint is no longer a runtime option — it comes from the provider's
+// registry preset (ADR-0012). `listModels` and `generate` share this shape.
+export type ListModelsOptions = {
+  apiKey: string
+  signal: AbortSignal
+}
+
 export type GenerationResult = { ok: true; text: string } | { ok: false; error: GenerationError }
+
+// A model the user can pick. `id` is the stable string the provider's `model`
+// field wants and the only value ever persisted or sent; `label` is a
+// display-only friendly name, recomputed each list load (ADR-0012).
+export type ModelInfo = { id: string; label?: string }
+
+export type ModelListResult = { ok: true; models: ModelInfo[] } | { ok: false; error: GenerationError }
 
 export interface AIProvider {
   readonly id: string
   generate(input: GenerationInput, opts: GenerateOptions): Promise<GenerationResult>
+  listModels(opts: ListModelsOptions): Promise<ModelListResult>
 }
 
 export const GENERATION_ERROR_KINDS: readonly GenerationErrorKind[] = [
@@ -51,6 +68,7 @@ export const GENERATION_ERROR_KINDS: readonly GenerationErrorKind[] = [
   'provider-error',
   'invalid-response',
   'generation-cancelled',
+  'model-not-available',
 ]
 
 const RETRYABLE = new Set<GenerationErrorKind>([

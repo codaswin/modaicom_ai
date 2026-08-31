@@ -1,29 +1,23 @@
 import { runGeneration } from '../features/generation/generate'
 import { isGenerationRequest } from '../features/generation/generationRequest'
-import { DEFAULT_GENERATION_PREFERENCES, isGenerationPreferences } from '../features/generation/preferences'
-import { KNOWN_PROVIDER_IDS } from '../features/generation/providers/registry'
+import { isGenerationPreferences } from '../features/generation/preferences'
+import { getPreset, getProvider, KNOWN_PROVIDER_IDS } from '../features/generation/providers/registry'
 import type { GenerationError, GenerationResult } from '../features/generation/types'
 import {
+  type ConnectionTestResult,
   GENERATION_PORT_NAME,
   GENERATION_PROTOCOL_VERSION,
   isGenerationOneShotMessage,
   isGenerationPortMessage,
   type GenerationResultMessage,
 } from '../shared/protocol'
-import {
-  readApiKey,
-  readProviderConfig,
-  readProviderStatus,
-  readTransmissionConsent,
-  writeTransmissionConsent,
-} from './keyStore'
+import { readActiveConfig, readApiKey, readConsent, readProviderStatus, writeConsent } from './keyStore'
 
 const GENERATION_TIMEOUT_MS = 30_000
 
 // The host grant is optional (ADR-0008); without it the SW fetch cannot reach
 // the provider, which surfaces as `provider-not-configured` with an
-// options-page sub-message.
-const PROVIDER_HOST: Record<string, string> = { openai: 'https://api.openai.com/*' }
+// options-page sub-message. The match pattern is preset data (ADR-0012).
 
 // At most one generation in flight (one action popup, one Port). A fresh Port
 // supersedes and aborts the old.
@@ -49,19 +43,40 @@ function errorResult(kind: GenerationError['kind']): GenerationResult {
   return { ok: false, error: { kind } }
 }
 
-async function preflight(): Promise<GenerationResult | { model: string; providerId: string; apiKey: string; baseUrl?: string }> {
-  const config = await readProviderConfig()
+// Snapshots the active provider/model/key/consent once at kickoff. A config
+// change made mid-generation lands on the next Generate, never this one (ADR-0012).
+async function preflight(): Promise<GenerationResult | { model: string; providerId: string; apiKey: string }> {
+  const config = await readActiveConfig()
   if (!config || !KNOWN_PROVIDER_IDS.includes(config.providerId)) return errorResult('provider-not-configured')
-  const host = PROVIDER_HOST[config.providerId]
+  const host = getPreset(config.providerId)?.host
   if (host) {
     const granted = await chrome.permissions.contains({ origins: [host] }).catch(() => false)
     if (!granted) return errorResult('provider-not-configured')
   }
   const apiKey = await readApiKey(config.providerId)
   if (!apiKey) return errorResult('api-key-missing')
-  const consent = await readTransmissionConsent()
-  if (consent?.providerId !== config.providerId) return errorResult('transmission-not-consented')
-  return { model: config.model, providerId: config.providerId, apiKey, baseUrl: config.baseUrl }
+  const consent = await readConsent(config.providerId)
+  if (!consent) return errorResult('transmission-not-consented')
+  return { model: config.model, providerId: config.providerId, apiKey }
+}
+
+// TEST_AND_LIST: validate the key against the selected provider and return its
+// models, in one zero-token metadata round trip. The key is used for this call
+// only and never persisted here (ADR-0008 amendment).
+async function testAndList(providerId: string, apiKey: string): Promise<ConnectionTestResult> {
+  const provider = getProvider(providerId)
+  const preset = getPreset(providerId)
+  if (!provider || !preset) return { ok: false, error: { kind: 'provider-not-configured' } }
+  let result
+  try {
+    result = await provider.listModels({ apiKey, signal: composeAbortSignal(new AbortController()) })
+  } catch {
+    return { ok: false, error: { kind: 'provider-error' } }
+  }
+  if (!result.ok) return { ok: false, error: result.error }
+  // A 200 that yielded no usable models: the key is valid, show the curated list.
+  if (result.models.length === 0) return { ok: true, models: [...preset.fallbackModels], modelSource: 'fallback' }
+  return { ok: true, models: result.models, modelSource: 'live' }
 }
 
 function composeAbortSignal(controller: AbortController): AbortSignal {
@@ -130,21 +145,10 @@ async function handleOneShot(message: unknown, sender: chrome.runtime.MessageSen
   if (!isGenerationOneShotMessage(message) || !isExtensionPage(sender)) return undefined
   if (message.type === 'GET_PROVIDER_STATUS') return readProviderStatus()
   if (message.type === 'RECORD_TRANSMISSION_CONSENT') {
-    await writeTransmissionConsent(message.providerId)
+    await writeConsent(message.providerId)
     return { ok: true }
   }
-  // TEST_PROVIDER: a minimal generation with no LinkedIn content and the
-  // default preference triple.
-  try {
-    const result = await generate(
-      { interactionKind: 'post-comment', postText: 'ping' },
-      DEFAULT_GENERATION_PREFERENCES,
-      composeAbortSignal(new AbortController()),
-    )
-    return result.ok ? { ok: true } : { ok: false, error: result.error }
-  } catch {
-    return { ok: false, error: { kind: 'provider-error' } }
-  }
+  return testAndList(message.providerId, message.apiKey)
 }
 
 export function registerGenerationHandlers(): void {

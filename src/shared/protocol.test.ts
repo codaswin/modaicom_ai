@@ -69,14 +69,20 @@ describe('generation protocol guards', () => {
     expect(isGenerationPortMessage({ v: V, type: 'CANCEL_GENERATION' })).toBe(true)
   })
 
-  it('is the v2 protocol', () => {
-    expect(GENERATION_PROTOCOL_VERSION).toBe(2)
+  it('is the v3 protocol', () => {
+    expect(GENERATION_PROTOCOL_VERSION).toBe(3)
   })
 
   it('accepts the one-shot messages', () => {
     expect(isGenerationOneShotMessage({ v: V, type: 'GET_PROVIDER_STATUS' })).toBe(true)
-    expect(isGenerationOneShotMessage({ v: V, type: 'TEST_PROVIDER' })).toBe(true)
     expect(isGenerationOneShotMessage({ v: V, type: 'RECORD_TRANSMISSION_CONSENT', providerId: 'openai' })).toBe(true)
+    expect(isGenerationOneShotMessage({ v: V, type: 'TEST_AND_LIST', providerId: 'openai', apiKey: 'k' })).toBe(true)
+  })
+
+  it('rejects the removed TEST_PROVIDER and a keyless TEST_AND_LIST', () => {
+    expect(isGenerationOneShotMessage({ v: V, type: 'TEST_PROVIDER' })).toBe(false)
+    expect(isGenerationOneShotMessage({ v: V, type: 'TEST_AND_LIST', providerId: 'openai' })).toBe(false)
+    expect(isGenerationOneShotMessage({ v: V, type: 'TEST_AND_LIST', providerId: '', apiKey: 'k' })).toBe(false)
   })
 
   it('accepts result messages', () => {

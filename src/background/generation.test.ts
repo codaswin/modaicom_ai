@@ -18,8 +18,8 @@ function setupChrome() {
         set: vi.fn(async (values: Record<string, unknown>) => {
           Object.entries(values).forEach(([k, v]) => store.set(k, v))
         }),
-        remove: vi.fn(async (key: string) => {
-          store.delete(key)
+        remove: vi.fn(async (keys: string | string[]) => {
+          ;(Array.isArray(keys) ? keys : [keys]).forEach((k) => store.delete(k))
         }),
       },
     },
@@ -53,7 +53,8 @@ describe('service-worker generation orchestrator — preflight', () => {
   })
 
   it('provider-not-configured when the host permission is not granted', async () => {
-    store.set('modaicom.provider.config', { providerId: 'openai', model: 'gpt-4o-mini' })
+    store.set('modaicom.provider.active', 'openai')
+    store.set('modaicom.provider.openai.model', 'gpt-4o-mini')
     store.set('modaicom.provider.openai.apiKey', 'sk-live-abc')
     permissionGranted.value = false
     await expect(run()).resolves.toEqual({ ok: false, error: { kind: 'provider-not-configured' } })
@@ -61,22 +62,25 @@ describe('service-worker generation orchestrator — preflight', () => {
   })
 
   it('api-key-missing when configured but no key stored', async () => {
-    store.set('modaicom.provider.config', { providerId: 'openai', model: 'gpt-4o-mini' })
+    store.set('modaicom.provider.active', 'openai')
+    store.set('modaicom.provider.openai.model', 'gpt-4o-mini')
     await expect(run()).resolves.toEqual({ ok: false, error: { kind: 'api-key-missing' } })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('transmission-not-consented when key present but no consent', async () => {
-    store.set('modaicom.provider.config', { providerId: 'openai', model: 'gpt-4o-mini' })
+    store.set('modaicom.provider.active', 'openai')
+    store.set('modaicom.provider.openai.model', 'gpt-4o-mini')
     store.set('modaicom.provider.openai.apiKey', 'sk-live-abc')
     await expect(run()).resolves.toEqual({ ok: false, error: { kind: 'transmission-not-consented' } })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('invalid-response when the request fails the strict guard', async () => {
-    store.set('modaicom.provider.config', { providerId: 'openai', model: 'gpt-4o-mini' })
+    store.set('modaicom.provider.active', 'openai')
+    store.set('modaicom.provider.openai.model', 'gpt-4o-mini')
     store.set('modaicom.provider.openai.apiKey', 'sk-live-abc')
-    store.set('modaicom.provider.consent', { providerId: 'openai', consentedAt: Date.now() })
+    store.set('modaicom.provider.openai.consent', { consentedAt: Date.now() })
     await expect(run({ interactionKind: 'post-comment', postText: 'x', authorDisplayName: 'Ada' })).resolves.toEqual({
       ok: false,
       error: { kind: 'invalid-response' },
@@ -89,9 +93,10 @@ describe('service-worker generation orchestrator — preflight', () => {
     ['extra key', { tone: 'friendly', intent: 'disagree', length: 'long', style: 'x' }],
     ['not an object', 'friendly'],
   ])('invalid-preferences (no fetch) when preferences are %s', async (_label, preferences) => {
-    store.set('modaicom.provider.config', { providerId: 'openai', model: 'gpt-4o-mini' })
+    store.set('modaicom.provider.active', 'openai')
+    store.set('modaicom.provider.openai.model', 'gpt-4o-mini')
     store.set('modaicom.provider.openai.apiKey', 'sk-live-abc')
-    store.set('modaicom.provider.consent', { providerId: 'openai', consentedAt: Date.now() })
+    store.set('modaicom.provider.openai.consent', { consentedAt: Date.now() })
     await expect(runWithPrefs(preferences)).resolves.toEqual({ ok: false, error: { kind: 'invalid-preferences' } })
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -99,9 +104,10 @@ describe('service-worker generation orchestrator — preflight', () => {
 
 describe('service-worker generation orchestrator — happy path', () => {
   beforeEach(() => {
-    store.set('modaicom.provider.config', { providerId: 'openai', model: 'gpt-4o-mini' })
+    store.set('modaicom.provider.active', 'openai')
+    store.set('modaicom.provider.openai.model', 'gpt-4o-mini')
     store.set('modaicom.provider.openai.apiKey', 'sk-live-abc')
-    store.set('modaicom.provider.consent', { providerId: 'openai', consentedAt: Date.now() })
+    store.set('modaicom.provider.openai.consent', { consentedAt: Date.now() })
   })
 
   it('reads the key from storage, calls the provider, returns the text', async () => {
@@ -161,6 +167,22 @@ describe('service-worker generation orchestrator — happy path', () => {
     expect(body.max_tokens).toBeGreaterThan(shortTokens)
   })
 
+  it('snapshots the active provider config per call — a switch lands on the next Generate, not this one', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify(OK_BODY), { status: 200, headers: { 'content-type': 'application/json' } }),
+    )
+    await run()
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe('https://api.openai.com/v1/chat/completions')
+
+    // the user opens settings mid-session and reconfigures; the in-flight draft
+    // is bound to the (now closed) popup Port and aborted, so only a *fresh*
+    // Generate observes the change.
+    fetchMock.mockClear()
+    store.set('modaicom.provider.openai.model', 'gpt-4.1-mini')
+    await run()
+    expect(JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string).model).toBe('gpt-4.1-mini')
+  })
+
   it('never writes preferences to the console', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
@@ -211,7 +233,7 @@ describe('one-shot sender authorisation', () => {
       runtime: { id: 'ext' },
       storage: { local: { get: vi.fn(async () => ({})) } },
     })
-    const reply = await handleOneShotForTest({ v: 2, type: 'GET_PROVIDER_STATUS' }, {
+    const reply = await handleOneShotForTest({ v: 3, type: 'GET_PROVIDER_STATUS' }, {
       id: 'ext',
       origin: 'chrome-extension://ext',
     } as chrome.runtime.MessageSender)
@@ -220,12 +242,51 @@ describe('one-shot sender authorisation', () => {
 
   it('GET_PROVIDER_STATUS from a content script is ignored', async () => {
     vi.stubGlobal('chrome', { runtime: { id: 'ext' } })
-    const reply = await handleOneShotForTest({ v: 2, type: 'GET_PROVIDER_STATUS' }, {
+    const reply = await handleOneShotForTest({ v: 3, type: 'GET_PROVIDER_STATUS' }, {
       id: 'ext',
       origin: 'https://www.linkedin.com',
       url: 'https://www.linkedin.com/feed/',
       tab: { id: 1 } as chrome.tabs.Tab,
     } as chrome.runtime.MessageSender)
     expect(reply).toBeUndefined()
+  })
+})
+
+describe('TEST_AND_LIST — validate-before-save', () => {
+  const SENDER = { id: 'ext', origin: 'chrome-extension://ext' } as chrome.runtime.MessageSender
+  const msg = (apiKey = 'sk-test-key') => ({ v: 3 as const, type: 'TEST_AND_LIST' as const, providerId: 'openai', apiKey })
+
+  it('returns the live model list on a 200 and never persists the key', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: 'gpt-4o-mini' }, { id: 'text-embedding-3-small' }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+    const reply = await handleOneShotForTest(msg(), SENDER)
+    expect(reply).toEqual({ ok: true, models: [{ id: 'gpt-4o-mini' }], modelSource: 'live' })
+    expect([...store.values()]).not.toContain('sk-test-key')
+    expect(store.has('modaicom.provider.openai.apiKey')).toBe(false)
+  })
+
+  it('falls back to the curated list when the live list yields nothing usable', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }))
+    const reply = (await handleOneShotForTest(msg(), SENDER)) as { ok: true; modelSource: string; models: unknown[] }
+    expect(reply.ok).toBe(true)
+    expect(reply.modelSource).toBe('fallback')
+    expect(reply.models.length).toBeGreaterThan(0)
+  })
+
+  it('a 401 returns authentication-failed with no persistence', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 401 }))
+    const reply = await handleOneShotForTest(msg(), SENDER)
+    expect(reply).toEqual({ ok: false, error: { kind: 'authentication-failed' } })
+    expect(store.size).toBe(0)
+  })
+
+  it('a network failure returns a typed, retryable error', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
+    const reply = await handleOneShotForTest(msg(), SENDER)
+    expect(reply).toEqual({ ok: false, error: { kind: 'network-error' } })
   })
 })

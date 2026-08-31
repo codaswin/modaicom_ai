@@ -265,7 +265,7 @@ describe('Popup', () => {
     expect(JSON.stringify(sent)).not.toContain('Grace Hopper')
 
     expect(screen.getByText('Drafting…')).toBeInTheDocument()
-    port.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Here is a drafted reply.' })
+    port.emit({ v: 3, type: 'GENERATION_RESULT', ok: true, text: 'Here is a drafted reply.' })
     expect(await screen.findByDisplayValue('Here is a drafted reply.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument()
@@ -285,7 +285,7 @@ describe('Popup', () => {
     await screen.findByText('A useful post.')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: 'Generate reply' }))
-    port.emit({ v: 2, type: 'GENERATION_RESULT', ok: false, error: { kind: 'rate-limited' } })
+    port.emit({ v: 3, type: 'GENERATION_RESULT', ok: false, error: { kind: 'rate-limited' } })
 
     expect(await screen.findByText(/rate-limiting requests/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
@@ -404,7 +404,7 @@ describe('Popup', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
 
       await user.click(screen.getByRole('button', { name: 'Generate reply' }))
-      firstPort.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Draft one.' })
+      firstPort.emit({ v: 3, type: 'GENERATION_RESULT', ok: true, text: 'Draft one.' })
       await screen.findByDisplayValue('Draft one.')
 
       await user.selectOptions(screen.getByRole('combobox', { name: 'Length' }), 'long')
@@ -440,7 +440,7 @@ describe('Popup', () => {
       await screen.findByText('A useful post.')
       await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
       await user.click(screen.getByRole('button', { name: 'Generate reply' }))
-      port.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Drafted reply text.' })
+      port.emit({ v: 3, type: 'GENERATION_RESULT', ok: true, text: 'Drafted reply text.' })
       await screen.findByDisplayValue('Drafted reply text.')
       return { user }
     }
@@ -501,14 +501,14 @@ describe('Popup', () => {
       await screen.findByText('A useful post.')
       await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
       await user.click(screen.getByRole('button', { name: 'Generate reply' }))
-      p1.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Draft one.' })
+      p1.emit({ v: 3, type: 'GENERATION_RESULT', ok: true, text: 'Draft one.' })
       await screen.findByDisplayValue('Draft one.')
 
       await user.click(screen.getByRole('button', { name: 'Insert' }))
       await screen.findByText(/Inserted into your LinkedIn comment box/)
 
       await user.click(screen.getByRole('button', { name: 'Regenerate' }))
-      p2.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Draft two.' })
+      p2.emit({ v: 3, type: 'GENERATION_RESULT', ok: true, text: 'Draft two.' })
       await screen.findByDisplayValue('Draft two.')
 
       expect(screen.getByRole('button', { name: 'Replace with new draft' })).toBeInTheDocument()
@@ -529,7 +529,7 @@ describe('Popup', () => {
       await screen.findByText('A useful post.')
       await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
       await user.click(screen.getByRole('button', { name: 'Generate reply' }))
-      port.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Drafted reply text.' })
+      port.emit({ v: 3, type: 'GENERATION_RESULT', ok: true, text: 'Drafted reply text.' })
       await screen.findByDisplayValue('Drafted reply text.')
 
       expect(screen.queryByRole('button', { name: 'Insert' })).not.toBeInTheDocument()

@@ -26,7 +26,7 @@ import './popup.css'
 // and therefore no Insert.
 type RelaySession = { sessionId: string; generation: number }
 
-type ProviderStatus = { configured: boolean; providerId?: string; model?: string; consented: boolean }
+type ProviderStatus = { configured: boolean; providerId?: string; providerLabel?: string; model?: string; consented: boolean }
 // `{ reachable: false }` means the GET_PROVIDER_STATUS round-trip to the service
 // worker failed or came back malformed — distinct from a genuine
 // not-configured / not-consented answer. The usual cause is a stale service
@@ -49,6 +49,7 @@ const generationErrorMessages = {
   'provider-error': 'Your provider returned an error. Retry.',
   'invalid-response': 'The provider’s response was empty or unreadable. Retry.',
   'generation-cancelled': 'Generation cancelled.',
+  'model-not-available': 'That model isn’t available any more. Pick another in settings.',
 } satisfies Record<GenerationErrorKind, string>
 
 function openOptions() {

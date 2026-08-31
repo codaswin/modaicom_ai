@@ -20,7 +20,7 @@ const MAX_TOKENS_BY_LENGTH: Record<ResponseLength, number> = { short: 100, mediu
 export async function runGeneration(
   request: GenerationRequest,
   preferences: GenerationPreferences,
-  opts: { providerId: string; model: string; apiKey: string; baseUrl?: string; signal: AbortSignal },
+  opts: { providerId: string; model: string; apiKey: string; signal: AbortSignal },
 ): Promise<GenerationResult> {
   const provider = getProvider(opts.providerId)
   if (!provider) return { ok: false, error: { kind: 'provider-not-configured' } }
@@ -28,7 +28,6 @@ export async function runGeneration(
   return provider.generate(input, {
     model: opts.model,
     apiKey: opts.apiKey,
-    baseUrl: opts.baseUrl,
     signal: opts.signal,
     temperature: TEMPERATURE,
     maxTokens: MAX_TOKENS_BY_LENGTH[preferences.length],
