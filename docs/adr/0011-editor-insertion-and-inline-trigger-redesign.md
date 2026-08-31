@@ -133,14 +133,20 @@ independent of the OS and exposed only through class names LinkedIn renames)
 The filled brand purple also keeps it unmistakably distinct from LinkedIn's grey
 ghost-style native actions.
 
-### Zero-layout-shift anchoring
+### Placement: docked in the comment action row
 
-The wrapper host is a **0×0 in-flow anchor** (`position: relative; width: 0;
-height: 0; overflow: visible`) inserted after the editor as today; the `<button>`
-inside is `position: absolute`, offset just past the composer's right edge.
-Being 0×0 it shifts nothing, and being in normal flow next to the editor the
-button tracks it on every reflow and scroll with **no `ResizeObserver` and no
-scroll handlers**.
+**Amended 2026-08-31** (superseding the original 0×0-anchor placement below).
+The trigger is a small inline-flex icon placed **immediately left of LinkedIn's
+emoji button** in the comment/reply action row — `findEmojiButton` climbs a few
+levels from the editor and takes the emoji-labelled button in the nearest
+containing ancestor, then `insertBefore`. If that button can't be found (label
+changed) it falls back to placing the trigger after the editor. It flows with
+LinkedIn's own icons rather than floating, so it reads as part of the composer.
+
+*Original decision (kept for history):* the host was a 0×0 in-flow anchor with an
+absolutely-positioned button offset past the composer's right edge — zero layout
+impact, no scroll/resize handlers. Moved into the icon row on user feedback that
+the floating position looked detached and clipped.
 
 ### States and label
 
@@ -157,9 +163,18 @@ CSS-rendered; the stylesheet is bundled into the content-script JS). No
 `scripting`/`tabs` addition (`chrome.tabs.sendMessage` from an extension page
 needs no `tabs` permission).
 
+## Opening the popup on trigger click
+
+**Amended 2026-08-31.** After the content script relays a fresh extraction
+result, the service worker calls `chrome.action.openPopup()` (best-effort,
+`.catch` swallowed) so the popup opens on the trigger click without a second
+click on the toolbar icon. It fires only when `writeRelay` *accepts* the result,
+so the popup opens to the just-written context with no race. Silently a no-op
+where the browser disallows it (older Chrome, a popup already open) — the manual
+open still works.
+
 ## Not doing
 
 Automatic Post/Reply (ADR-0001), auto-engagement, multiple/ranked drafts
 (ADR-0010), a page-side Insert affordance (Insert lives in the popup where the
-draft is), `chrome.action.openPopup()` to fuse the two clicks, new providers,
-local AI, analytics.
+draft is), new providers, local AI, analytics.

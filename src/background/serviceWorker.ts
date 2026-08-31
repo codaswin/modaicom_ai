@@ -92,6 +92,11 @@ async function handleRelayMessage(message: RelayMessage, sender: chrome.runtime.
     const tabId = sender.tab?.id
     if (typeof tabId !== 'number') return { ok: false }
     const accepted = await writeRelay(tabId, message.generation, message.sessionId, message.result)
+    // Best-effort: pop the action popup open now that the relay holds the fresh
+    // context, so the user doesn't have to click the toolbar icon. Silently a
+    // no-op where the browser doesn't allow it (older Chrome, popup already
+    // open) — the manual open still works.
+    if (accepted) void chrome.action?.openPopup?.().catch(() => undefined)
     return { ok: true, accepted }
   }
   if (message.type === 'CLEAR_RELAY') {

@@ -112,13 +112,33 @@ function resolveTarget(editor: HTMLElement, urlString = location.href): Resolved
   return { kind, postElement: post, commentElement: comment, editor, key: `comment-reply:${id}` }
 }
 
+// LinkedIn's comment/reply action row always carries an emoji-picker button
+// whose accessible label mentions "emoji". We climb a few levels from the editor
+// and take the emoji button in the nearest containing ancestor — that is this
+// composer's, not a neighbour's. If the label ever changes we get nothing and
+// fall back to placing the trigger after the editor.
+function findEmojiButton(editor: HTMLElement): HTMLElement | undefined {
+  let scope: HTMLElement | null = editor
+  for (let depth = 0; depth < 5 && scope; depth += 1) {
+    const button = scope.querySelector<HTMLElement>('button[aria-label*="emoji" i]')
+    if (button && !button.closest(`[${OWNED_WRAPPER}]`)) return button
+    scope = scope.parentElement
+  }
+  return undefined
+}
+
 function insertTrigger(editor: HTMLElement, target: ResolvedTarget): void {
   const key = target.key
   if (Array.from(document.querySelectorAll<HTMLElement>(`[${OWNED_WRAPPER}]`)).some((node) => node.dataset.modaicomOwner === key)) return
   const stage = isFeedRoute() ? 'feed' : 'individual'
   recordDiagnostic({ stage, event: 'trigger-insertion', insertionAttempted: true })
   const trigger = createInlineTrigger(target.kind, key, (event) => runInlineExtraction(event, trigger, target))
-  editor.insertAdjacentElement('afterend', trigger.host)
+  const emojiButton = findEmojiButton(editor)
+  if (emojiButton?.parentElement) {
+    emojiButton.parentElement.insertBefore(trigger.host, emojiButton)
+  } else {
+    editor.insertAdjacentElement('afterend', trigger.host)
+  }
 }
 
 function runInlineExtraction(event: Event, trigger: InlineTriggerHandle, target: ResolvedTarget): void {

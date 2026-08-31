@@ -326,6 +326,43 @@ describe('inline trigger content boundary', () => {
     main.remove()
   })
 
+  it('docks the trigger just left of the emoji button when the comment toolbar has one', () => {
+    const main = document.createElement('main')
+    main.innerHTML = `
+      <div class="feed-shared-update-v2" data-urn="urn:li:activity:1">
+        <div data-testid="post-body">Post body.</div>
+        <div class="comments-comment-box">
+          <div contenteditable="true" aria-label="Add a comment"></div>
+          <div class="editor-actions">
+            <button type="button" aria-label="Open Emoji Keyboard">🙂</button>
+            <button type="button" aria-label="Add a GIF">GIF</button>
+          </div>
+        </div>
+      </div>`
+    document.body.append(main)
+
+    reconcile(ACTIVITY_URL)
+
+    const emoji = main.querySelector('button[aria-label="Open Emoji Keyboard"]') as HTMLElement
+    const trigger = emoji.previousElementSibling as HTMLElement
+    expect(trigger.matches('[data-modaicom-inline-wrapper]')).toBe(true)
+    expect(trigger.dataset.modaicomOwner?.startsWith('post-comment:')).toBe(true)
+    expect(trigger.shadowRoot?.querySelector('button')?.getAttribute('aria-label')).toBe('Generate a comment with modaicom')
+    // it is not also placed after the editor
+    const editor = main.querySelector('[aria-label="Add a comment"]') as HTMLElement
+    expect((editor.nextElementSibling as HTMLElement | null)?.matches('[data-modaicom-inline-wrapper]')).not.toBe(true)
+    expect(document.querySelectorAll('[data-modaicom-inline-wrapper]').length).toBe(1)
+    main.remove()
+  })
+
+  it('falls back to placing the trigger after the editor when no emoji button is found', () => {
+    const main = legacyPostWithComment()
+    reconcile(ACTIVITY_URL)
+    const editor = main.querySelector('[aria-label="Add a comment"]') as HTMLElement
+    expect((editor.nextElementSibling as HTMLElement).matches('[data-modaicom-inline-wrapper]')).toBe(true)
+    main.remove()
+  })
+
   it('gives one comment-reply trigger per distinct target comment', () => {
     const main = legacyPostWithComment('urn:li:comment:(activity:1,10)')
     const post = main.querySelector('.feed-shared-update-v2')!
