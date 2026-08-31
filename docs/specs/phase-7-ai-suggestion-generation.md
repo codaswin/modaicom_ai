@@ -139,12 +139,15 @@ Nothing is inserted or posted.
 - **Length** — non-overlapping sentence ranges as imperatives, each with a
   density instruction. Approximate targets (final wording set during
   implementation, in this shape):
-  - short — "Write 1–2 sentences. Make a single point and stop."
-  - medium — "Write 3–4 sentences. Develop one idea with a supporting reason or
-    example."
-  - long — "Write 5–7 sentences, up to two short paragraphs. Develop the point
-    fully — still a comment, not an article."
+  - short — "Write 1 sentence. Make a single point and stop."
+  - medium — "Write 2–3 sentences. Make one point and back it with a brief reason
+    or example."
+  - long — "Write 4–5 sentences in one paragraph. Develop the point with
+    reasoning — still a comment, not an article."
   - `approxTarget` realigned to the same ranges.
+  - Manual testing after the first cut (short 1–2 / medium 3–4 / long 5–7 + two
+    paragraphs) showed Long far too long to read; the ladder was pulled down one
+    step to the values above.
 - **Tone / Intent** — sharpened to a concrete lever plus an explicit "don't",
   still terse imperatives, still free of LinkedIn/provider nouns. Direction (final
   wording set during implementation): professional = businesslike register, no

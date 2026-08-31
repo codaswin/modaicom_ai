@@ -80,27 +80,28 @@ export const INTENTS = [
 // Non-overlapping sentence ranges (ADR-0010): "roughly one or two" vs "roughly
 // two to four" both admit a 2-sentence reply, so the Phase 6 wording collapsed
 // the three lengths. Each instruction now pairs a discrete range with a density
-// verb. `approxTarget` is unused by the UI (qualitative labels only); the
+// verb. The ladder was also pulled down a notch after manual testing (ADR-0010):
+// Long at 5–7 sentences / two paragraphs read as an article nobody scrolls
+// through. `approxTarget` is unused by the UI (qualitative labels only); the
 // Phase 7 provider tuning derives a token ceiling from the id, not this string.
 export const LENGTHS = [
   {
     id: 'short',
     label: 'Short',
-    instruction: 'Write 1–2 sentences. Make a single point and stop.',
-    approxTarget: '1–2 sentences',
+    instruction: 'Write 1 sentence. Make a single point and stop.',
+    approxTarget: '1 sentence',
   },
   {
     id: 'medium',
     label: 'Medium',
-    instruction: 'Write 3–4 sentences. Develop one idea with a supporting reason or example.',
-    approxTarget: '3–4 sentences',
+    instruction: 'Write 2–3 sentences. Make one point and back it with a brief reason or example.',
+    approxTarget: '2–3 sentences',
   },
   {
     id: 'long',
     label: 'Long',
-    instruction:
-      'Write 5–7 sentences, up to two short paragraphs. Develop the point fully — still a comment, not an article.',
-    approxTarget: '5–7 sentences, up to two short paragraphs',
+    instruction: 'Write 4–5 sentences in one paragraph. Develop the point with reasoning — still a comment, not an article.',
+    approxTarget: '4–5 sentences',
   },
 ] as const
 

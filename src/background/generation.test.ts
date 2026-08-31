@@ -131,7 +131,7 @@ describe('service-worker generation orchestrator — happy path', () => {
     const system = JSON.parse(init.body as string).messages[0].content as string
     expect(system.toLowerCase()).toContain('push back')
     expect(system.toLowerCase()).toContain('clear stance')
-    expect(system).toContain('1–2 sentences')
+    expect(system).toContain('Write 1 sentence')
     expect(system).not.toContain('2 to 4 sentences')
   })
 
@@ -142,8 +142,8 @@ describe('service-worker generation orchestrator — happy path', () => {
     await run(REQUEST, { tone: 'confident', intent: 'disagree', length: 'long' })
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     const system = JSON.parse(init.body as string).messages[0].content as string
-    expect(system).toContain('5–7 sentences')
-    expect(system).not.toContain('1–2 sentences')
+    expect(system).toContain('4–5 sentences')
+    expect(system).not.toContain('Write 1 sentence')
   })
 
   it('sets temperature 0.6 and a length-derived max_tokens on the outbound request', async () => {

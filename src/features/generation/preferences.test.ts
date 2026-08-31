@@ -20,11 +20,12 @@ const BANNED_SUBSTRINGS = ['openai', 'gpt', 'claude', 'linkedin', 'http', 'api k
 // ADR-0010 sharpened the strings (concrete lever + explicit "don't"), raising the bound.
 const MAX_INSTRUCTION_WORDS = 40
 
-// Parse "N–M sentences" / "N-M sentences" from a Length instruction.
+// Parse "N sentence", "N–M sentences" or "N-M sentences" from a Length
+// instruction; a bare count is the range [N, N].
 function sentenceRange(instruction: string): [number, number] {
-  const match = instruction.match(/(\d+)\s*[–-]\s*(\d+)\s+sentences/)
+  const match = instruction.match(/(\d+)(?:\s*[–-]\s*(\d+))?\s+sentences?/)
   if (!match) throw new Error(`no sentence range in "${instruction}"`)
-  return [Number(match[1]), Number(match[2])]
+  return [Number(match[1]), Number(match[2] ?? match[1])]
 }
 
 describe('Response Controls registries', () => {

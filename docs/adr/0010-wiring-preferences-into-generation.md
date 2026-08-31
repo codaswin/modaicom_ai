@@ -66,12 +66,16 @@ overlapped ("one or two" ∩ "two to four" = 2), so a model's natural ~2–3-sen
 comment satisfied all three. Revised:
 
 - **Length** — non-overlapping sentence ranges as imperatives, each with a
-  density instruction: short *"Write 1–2 sentences. Make a single point and
-  stop."*; medium *"Write 3–4 sentences. Develop one idea with a supporting
-  reason or example."*; long *"Write 5–7 sentences, up to two short paragraphs.
-  Develop the point fully — still a comment, not an article."* Sentence counts
+  density instruction: short *"Write 1 sentence. Make a single point and
+  stop."*; medium *"Write 2–3 sentences. Make one point and back it with a brief
+  reason or example."*; long *"Write 4–5 sentences in one paragraph. Develop the
+  point with reasoning — still a comment, not an article."* Sentence counts
   (which models track well), not word counts (which are not guaranteed).
-  `approxTarget` realigned to the same ranges.
+  `approxTarget` realigned to the same ranges. **Manual-testing follow-up
+  (2026-08-31):** the first cut ran a notch long — short 1–2, medium 3–4, long
+  5–7 / two paragraphs — with Long reading as an article nobody scrolls through.
+  The whole ladder was pulled down one step to the values above; the ranges stay
+  discrete and ascending.
 - **Tone / Intent** — sharpened to a concrete lever plus an explicit "don't"
   (e.g. confident: *"…No hedging ('maybe', 'I think', 'it seems'), no filler
   qualifiers, no apologies."*; add-insight: *"…Do not restate the post."*). Still
@@ -85,8 +89,8 @@ comment satisfied all three. Revised:
 - **`temperature: 0.6`** (fixed) — OpenAI's default of 1.0 maximises run-to-run
   variance, which is much of why "changing Tone has little effect". 0.6 follows
   instructions while leaving Regenerate genuinely different.
-- **`maxTokens`** derived from the selected length (short ≈ 160, medium ≈ 320,
-  long ≈ 640 — roughly 2× each sentence target) as a **cost and runaway
+- **`maxTokens`** derived from the selected length (short ≈ 100, medium ≈ 220,
+  long ≈ 380 — roughly 2× each sentence target) as a **cost and runaway
   backstop**, not the length mechanism. Normal output never truncates; a
   `finish_reason: "length"` response with non-empty content is still returned as
   `ok: true` rather than erroring.

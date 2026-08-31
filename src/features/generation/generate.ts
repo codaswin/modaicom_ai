@@ -11,7 +11,7 @@ const TEMPERATURE = 0.6
 
 // Cost / runaway backstop only — roughly 2x each length's sentence target, so
 // normal output never truncates. Not the length mechanism (the prompt is).
-const MAX_TOKENS_BY_LENGTH: Record<ResponseLength, number> = { short: 160, medium: 320, long: 640 }
+const MAX_TOKENS_BY_LENGTH: Record<ResponseLength, number> = { short: 100, medium: 220, long: 380 }
 
 // Provider-neutral orchestration: request + preferences -> input -> provider
 // call. Knows the generation layer and the provider registry; knows nothing

@@ -48,9 +48,9 @@ record them.
 ## Length
 
 5. Fix Tone + Intent. Generate at **Short**, then **Medium**, then **Long** on the
-   same post. Short ≈ 1–2 sentences, Medium ≈ 3–4, Long ≈ 5–7 (up to two short
-   paragraphs). The three must be visibly different lengths — not three variations
-   of the same paragraph.
+   same post. Short ≈ 1 sentence, Medium ≈ 2–3, Long ≈ 4–5 (one paragraph). The
+   three must be visibly different lengths — not three variations of the same
+   paragraph.
 
 ## Current selection
 
