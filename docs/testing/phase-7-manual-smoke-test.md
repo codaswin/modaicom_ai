@@ -72,6 +72,12 @@ record them.
     Reconnect, Retry → draft.
 11. Temporarily set a bad key on the options page → Generate → "Your API key was
     rejected", Open settings (not Retry).
+11a. Configure the key but leave the consent box unticked → the popup panel reads
+    "One more step: consent…", not the generic setup copy.
+11b. Reload only the popup while the service worker is torn down mid-protocol
+    change (or load a `dist/` whose worker is stale) → the panel reads "Couldn't
+    reach modaicom's background worker… Reload the extension", with Retry — not
+    "Open settings". A DEV build also logs a `[modaicom]` console.warn.
 12. Generate, then **Stop** → back to the Generate button, no draft.
 13. Generate, close the popup mid-request → reopen; no stuck spinner.
 

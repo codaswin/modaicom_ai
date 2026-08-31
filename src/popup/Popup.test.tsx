@@ -201,6 +201,39 @@ describe('Popup', () => {
     expect(openOptionsPage).toHaveBeenCalled()
   })
 
+  it('distinguishes an unreachable service worker from a not-configured provider', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example' }])
+    // GET_PROVIDER_STATUS gets no answer (stale worker / protocol skew): resolves undefined.
+    sendMessage.mockImplementation(async (msg: { type: string }) =>
+      msg.type === 'GET_PROVIDER_STATUS' ? undefined : null,
+    )
+    tabsSendMessage.mockResolvedValue(POST_RESULT)
+
+    render(<Popup />)
+
+    await screen.findByText('A useful post.')
+    expect(await screen.findByText(/Couldn.t reach modaicom.s background worker/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open settings' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(warn).toHaveBeenCalled()
+  })
+
+  it('asks for consent specifically when the key is configured but not consented', async () => {
+    query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example' }])
+    sendMessage.mockImplementation(async (msg: { type: string }) =>
+      msg.type === 'GET_PROVIDER_STATUS' ? { configured: true, consented: false } : null,
+    )
+    tabsSendMessage.mockResolvedValue(POST_RESULT)
+
+    render(<Popup />)
+
+    await screen.findByText('A useful post.')
+    expect(await screen.findByText(/consent to sending LinkedIn text/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Generate reply' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open settings' })).toBeInTheDocument()
+  })
+
   it('generates a draft over the Port and never sends author names', async () => {
     const user = userEvent.setup()
     query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example' }])

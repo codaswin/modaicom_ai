@@ -33,6 +33,13 @@ and rebuilds the prompt so the selection reliably steers the model.
   `background/` stays thin: transport, sender auth, storage, validation.
 - `TEST_PROVIDER` supplies `DEFAULT_GENERATION_PREFERENCES` — still a minimal call
   with zero LinkedIn content.
+- The popup's `GET_PROVIDER_STATUS` round-trip has a third outcome besides
+  configured / not-configured: **unreachable**. A rejected or malformed reply
+  (typically a stale service worker after this v1 → v2 bump) is kept distinct
+  from a genuine `configured: false` — the panel says "reload the extension" with
+  Retry rather than "Open settings", and a DEV build logs a `[modaicom]`
+  breadcrumb (ADR-0008). A configured-but-unconsented status gets its own
+  one-line "consent on the settings page" copy.
 
 ## Prompt construction
 

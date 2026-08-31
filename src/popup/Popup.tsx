@@ -21,6 +21,15 @@ import { useGeneration, type UseGeneration } from './useGeneration'
 import './popup.css'
 
 type ProviderStatus = { configured: boolean; providerId?: string; model?: string; consented: boolean }
+// `{ reachable: false }` means the GET_PROVIDER_STATUS round-trip to the service
+// worker failed or came back malformed — distinct from a genuine
+// not-configured / not-consented answer. The usual cause is a stale service
+// worker after a protocol bump (reload the extension).
+type ProviderStatusResult = ProviderStatus | { reachable: false }
+
+function isProviderStatus(value: ProviderStatusResult | null): value is ProviderStatus {
+  return value !== null && !('reachable' in value)
+}
 
 const generationErrorMessages = {
   'provider-not-configured': 'modaicom is not set up to reach an AI provider. Open settings.',
@@ -243,19 +252,44 @@ function ResponseControls({ prefs, update }: Pick<UsePreferences, 'prefs' | 'upd
   )
 }
 
-function GenerationPanel({ context, status, gen }: { context: LinkedInInteractionContext; status: ProviderStatus | null; gen: UseGeneration }) {
+function GenerationPanel({
+  context,
+  status,
+  gen,
+  onRetryStatus,
+}: {
+  context: LinkedInInteractionContext
+  status: ProviderStatusResult | null
+  gen: UseGeneration
+  onRetryStatus: () => void
+}) {
   const preferences = usePreferences()
-  const ready = Boolean(status?.configured && status?.consented)
   const request = contextToGenerationRequest(context)
   // Only ever generates with the current, hydrated selection (ADR-0010).
   const run = () => {
     if (preferences.ready) gen.generate(request, preferences.prefs)
   }
 
+  if (status !== null && !isProviderStatus(status)) {
+    return (
+      <div className="generation">
+        <p className="generation__error">
+          Couldn’t reach modaicom’s background worker. Reload the extension at chrome://extensions, then reopen this popup.
+        </p>
+        <button className="retry-button" onClick={onRetryStatus}>Retry</button>
+      </div>
+    )
+  }
+
+  const ready = Boolean(status?.configured && status?.consented)
   if (!ready) {
     return (
       <div className="generation">
-        <p className="generation__hint">Set up modaicom to draft replies.</p>
+        <p className="generation__hint">
+          {status?.configured
+            ? 'One more step: consent to sending LinkedIn text on the settings page.'
+            : 'Set up modaicom to draft replies.'}
+        </p>
         <button className="retry-button" onClick={openOptions}>Open settings</button>
       </div>
     )
@@ -288,7 +322,7 @@ export function Popup() {
   const [result, setResult] = useState<DetectionResult | null>(null)
   const [contextResult, setContextResult] = useState<ContextState | null>(null)
   const [isFeed, setIsFeed] = useState(false)
-  const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null)
+  const [providerStatus, setProviderStatus] = useState<ProviderStatusResult | null>(null)
   const gen = useGeneration()
   const { reset: resetGeneration } = gen
 
@@ -317,13 +351,19 @@ export function Popup() {
     resetGeneration()
     try {
       const status: unknown = await chrome.runtime.sendMessage({ v: GENERATION_PROTOCOL_VERSION, type: 'GET_PROVIDER_STATUS' })
-      setProviderStatus(
-        status && typeof status === 'object' && typeof (status as ProviderStatus).configured === 'boolean'
-          ? (status as ProviderStatus)
-          : { configured: false, consented: false },
-      )
-    } catch {
-      setProviderStatus({ configured: false, consented: false })
+      if (status && typeof status === 'object' && typeof (status as ProviderStatus).configured === 'boolean') {
+        setProviderStatus(status as ProviderStatus)
+      } else {
+        if (import.meta.env.DEV) {
+          console.warn('[modaicom] GET_PROVIDER_STATUS returned an unexpected shape — the service worker may be stale', status)
+        }
+        setProviderStatus({ reachable: false })
+      }
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.warn('[modaicom] GET_PROVIDER_STATUS failed — the service worker is unreachable', error)
+      }
+      setProviderStatus({ reachable: false })
     }
     const detection = await detectCurrentPage()
     setResult(detection)
@@ -361,7 +401,7 @@ export function Popup() {
         {context.kind === 'context-loading' ? <p className="context-panel__message">Reading LinkedIn context…</p> :
           context.kind === 'success' ? <>
             <InteractionView context={context.context} />
-            <GenerationPanel context={context.context} status={providerStatus} gen={gen} />
+            <GenerationPanel context={context.context} status={providerStatus} gen={gen} onRetryStatus={load} />
           </> :
           <><p className="context-panel__message">{showNeutralFeed ? 'Select a LinkedIn post to continue.' : contextMessages[context.kind]}</p>{canRetryContext ? <ActionButton label="Retry" onClick={load} /> : null}</>}
       </section> : null}
