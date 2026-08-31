@@ -138,6 +138,9 @@ Desktop.ini
 # Temporary files and local scratch directories
 tmp/
 temp/
+err/
+scratch/
+.scratch/
 *.tmp
 *.temp
 *.bak

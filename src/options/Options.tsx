@@ -153,12 +153,14 @@ export function Options() {
         <h2>Sending LinkedIn text to your provider</h2>
         <p className="options__note">
           To draft a reply, modaicom sends the LinkedIn <strong>post text</strong> — and, for a reply, the
-          <strong> comment text</strong> — that you explicitly select, to your configured provider, using your own API
-          key. This text is written by other people; your provider’s terms and retention policy govern it.
+          <strong> comment text</strong> — that you explicitly select, along with the <strong>tone, intent and
+          length</strong> you chose, to your configured provider, using your own API key. The post and comment text is
+          written by other people; your provider’s terms and retention policy govern it.
         </p>
         <p className="options__note">
           modaicom does <strong>not</strong> send author names, profiles, any URL, the LinkedIn page, your draft,
-          cookies, or account identifiers. Each generation uses your provider credits.
+          cookies, or account identifiers. The tone/intent/length you pick carry no LinkedIn content. Each generation
+          uses your provider credits.
         </p>
         <label className="options__consent">
           <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />

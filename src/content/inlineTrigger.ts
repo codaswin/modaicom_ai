@@ -21,6 +21,8 @@ let generation = 0
 const sessionId = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `session-${Math.random().toString(36).slice(2)}`
 let observer: MutationObserver | undefined
 let reconcileTimer: number | undefined
+let reconcilePendingSince = 0
+let safetyTimer: number | undefined
 let bootstrapRetryTimer: number | undefined
 let bootstrapRetryAttempts = 0
 let lastRoute = location.href
@@ -30,7 +32,7 @@ const ownerKeys = new WeakMap<HTMLElement, string>()
 const originalHistory: Partial<Record<'pushState' | 'replaceState', History['pushState'] | History['replaceState']>> = {}
 
 export function isSupportedRoute(urlString = location.href): boolean { return !runtimeInvalidated && classifyLinkedInRoute(urlString) !== 'unsupported' }
-export function markRuntimeInvalidated(): void { if (runtimeInvalidated) return; runtimeInvalidated = true; observer?.disconnect(); observer = undefined; cancelBootstrapRetry(); if (reconcileTimer !== undefined) { window.clearTimeout(reconcileTimer); reconcileTimer = undefined }; removeOwnedUi(); restoreHistoryHooks(); initialized = false }
+export function markRuntimeInvalidated(): void { if (runtimeInvalidated) return; runtimeInvalidated = true; observer?.disconnect(); observer = undefined; cancelBootstrapRetry(); stopSafetyReconcile(); if (reconcileTimer !== undefined) { window.clearTimeout(reconcileTimer); reconcileTimer = undefined }; removeOwnedUi(); restoreHistoryHooks(); initialized = false }
 function isFeedRoute(urlString = location.href): boolean { return classifyLinkedInRoute(urlString) === 'feed' }
 function feedRoot(root: Document | Element = document): HTMLElement | undefined { return root.querySelector<HTMLElement>(FEED_CONTAINER_SELECTOR) ?? undefined }
 export function postCandidates(root: Document | Element = document, urlString = location.href): HTMLElement[] {
@@ -160,16 +162,64 @@ function warnOnUnrecognizedFeed(): void {
 }
 export function reconcile(urlString = location.href): void { recordDiagnostic({ stage: isFeedRoute(urlString) ? 'feed' : 'individual', event: 'reconcile', routeRecognized: isSupportedRoute(urlString), feedContainerVariant: isFeedRoute(urlString) ? (feedRoot(document) ? feedContainerVariant(feedRoot(document) as Element) : 'none') : undefined }); if (!isSupportedRoute(urlString)) { removeOwnedUi(); return } if (isFeedRoute(urlString)) warnOnUnrecognizedFeed(); const seen = new Set<string>(); document.querySelectorAll<HTMLElement>(EDITOR_SELECTOR).forEach((editor) => { const target = resolveTarget(editor, urlString); if (!target) return; if (seen.has(target.key)) return; seen.add(target.key); insertTrigger(editor, target) }); document.querySelectorAll<HTMLElement>(`[${OWNED_WRAPPER}]`).forEach((node) => { if (!seen.has(node.dataset.modaicomOwner ?? '')) node.remove() }) }
 export function observationScopes(urlString = location.href): HTMLElement[] { if (!isSupportedRoute(urlString)) return []; const main = document.querySelector<HTMLElement>('main'); const feed = feedRoot(document); const posts = postCandidates(document, urlString); const scopes = isFeedRoute(urlString) ? (feed ? [feed] : main ? [main] : []) : (posts.length ? posts : main ? [main] : []); return Array.from(new Set(scopes)) }
-const BOOTSTRAP_MAX_ATTEMPTS = 50
+const BOOTSTRAP_MAX_ATTEMPTS = 120
 const BOOTSTRAP_RETRY_MS = 300
+const RECONCILE_DEBOUNCE_MS = 50
+const RECONCILE_MAX_WAIT_MS = 400
+// A low-frequency structural re-scan that catches a lazily-mounted composer even
+// when a burst of LinkedIn feed mutations starves the debounced observer or the
+// observer was scoped before the real feed container hydrated. Idempotent and
+// cheap; it stops when the route becomes unsupported or on teardown.
+const SAFETY_RECONCILE_MS = 1500
 function cancelBootstrapRetry(): void { if (bootstrapRetryTimer !== undefined) { window.clearTimeout(bootstrapRetryTimer); bootstrapRetryTimer = undefined } bootstrapRetryAttempts = 0 }
-function scheduleBootstrapRetry(): void { if (runtimeInvalidated || bootstrapRetryTimer !== undefined || bootstrapRetryAttempts >= BOOTSTRAP_MAX_ATTEMPTS || !isSupportedRoute()) return; bootstrapRetryTimer = window.setTimeout(() => { bootstrapRetryTimer = undefined; bootstrapRetryAttempts += 1; configureObserver(); if (observationScopes().length === 0 && bootstrapRetryAttempts < BOOTSTRAP_MAX_ATTEMPTS) scheduleBootstrapRetry() }, BOOTSTRAP_RETRY_MS) }
-function configureObserver(): void { if (runtimeInvalidated) return; observer?.disconnect(); observer = undefined; if (!isSupportedRoute()) { cancelBootstrapRetry(); return }; const scopes = observationScopes(); if (scopes.length === 0) { scheduleBootstrapRetry(); return }; cancelBootstrapRetry(); observer = new MutationObserver(scheduleReconcile); scopes.forEach((scope) => observer?.observe(scope, { childList: true, subtree: true })) }
-function scheduleReconcile(): void { if (runtimeInvalidated) return; if (reconcileTimer !== undefined) window.clearTimeout(reconcileTimer); reconcileTimer = window.setTimeout(() => { reconcileTimer = undefined; if (location.href !== lastRoute) { lastRoute = location.href; cancelBootstrapRetry(); removeOwnedUi(); sendClearRelay() } reconcile(); configureObserver() }, 50) }
+function scheduleBootstrapRetry(): void { if (runtimeInvalidated || bootstrapRetryTimer !== undefined || bootstrapRetryAttempts >= BOOTSTRAP_MAX_ATTEMPTS || !isSupportedRoute()) return; bootstrapRetryTimer = window.setTimeout(() => { bootstrapRetryTimer = undefined; bootstrapRetryAttempts += 1; configureObserver(); if (!feedRoot(document) && isFeedRoute() && bootstrapRetryAttempts < BOOTSTRAP_MAX_ATTEMPTS) scheduleBootstrapRetry() }, BOOTSTRAP_RETRY_MS) }
+function configureObserver(): void {
+  if (runtimeInvalidated) return
+  observer?.disconnect(); observer = undefined
+  if (!isSupportedRoute()) { cancelBootstrapRetry(); stopSafetyReconcile(); return }
+  startSafetyReconcile()
+  const scopes = observationScopes()
+  const main = document.querySelector<HTMLElement>('main')
+  // Always keep a coarse net on <main> in addition to the precise scopes, so a
+  // feed container that mounts after the observer was configured is still seen.
+  const observed = Array.from(new Set([...scopes, ...(main ? [main] : [])]))
+  if (observed.length === 0) { scheduleBootstrapRetry(); return }
+  // Keep looking for the real feed container until it exists (we may only have
+  // <main> so far).
+  if (isFeedRoute() && !feedRoot(document)) scheduleBootstrapRetry(); else cancelBootstrapRetry()
+  observer = new MutationObserver(scheduleReconcile)
+  observed.forEach((scope) => observer?.observe(scope, { childList: true, subtree: true }))
+}
+function runScheduledReconcile(): void {
+  reconcileTimer = undefined
+  reconcilePendingSince = 0
+  if (location.href !== lastRoute) { lastRoute = location.href; cancelBootstrapRetry(); removeOwnedUi(); sendClearRelay() }
+  reconcile(); configureObserver()
+}
+function scheduleReconcile(): void {
+  if (runtimeInvalidated) return
+  const now = Date.now()
+  if (reconcilePendingSince === 0) reconcilePendingSince = now
+  if (now - reconcilePendingSince >= RECONCILE_MAX_WAIT_MS) {
+    if (reconcileTimer !== undefined) { window.clearTimeout(reconcileTimer); reconcileTimer = undefined }
+    runScheduledReconcile()
+    return
+  }
+  if (reconcileTimer !== undefined) window.clearTimeout(reconcileTimer)
+  reconcileTimer = window.setTimeout(runScheduledReconcile, RECONCILE_DEBOUNCE_MS)
+}
+function startSafetyReconcile(): void {
+  if (runtimeInvalidated || safetyTimer !== undefined) return
+  safetyTimer = window.setInterval(() => {
+    if (runtimeInvalidated || !isSupportedRoute()) { stopSafetyReconcile(); return }
+    reconcile(); configureObserver()
+  }, SAFETY_RECONCILE_MS)
+}
+function stopSafetyReconcile(): void { if (safetyTimer !== undefined) { window.clearInterval(safetyTimer); safetyTimer = undefined } }
 function installHistoryHooks(): void { (['pushState', 'replaceState'] as const).forEach((method) => { if (originalHistory[method]) return; const original = history[method]; originalHistory[method] = original; history[method] = function (...args: Parameters<History[typeof method]>) { const result = original.apply(this, args); window.dispatchEvent(new Event('modaicom-route-change')); return result } }); window.addEventListener('popstate', scheduleReconcile); window.addEventListener('modaicom-route-change', scheduleReconcile) }
 function restoreHistoryHooks(): void { (['pushState', 'replaceState'] as const).forEach((method) => { const original = originalHistory[method]; if (original) history[method] = original; delete originalHistory[method] }); window.removeEventListener('popstate', scheduleReconcile); window.removeEventListener('modaicom-route-change', scheduleReconcile) }
 export function initializeInlineTriggerContentScript(): void { if (initialized || runtimeInvalidated) return; initialized = true; lastRoute = location.href; installHistoryHooks(); sendClearRelay(); reconcile(); configureObserver() }
-export function teardownInlineTriggerContentScript(): void { runtimeInvalidated = false; observer?.disconnect(); observer = undefined; cancelBootstrapRetry(); if (reconcileTimer !== undefined) { window.clearTimeout(reconcileTimer); reconcileTimer = undefined }; removeOwnedUi(); restoreHistoryHooks(); initialized = false }
+export function teardownInlineTriggerContentScript(): void { runtimeInvalidated = false; observer?.disconnect(); observer = undefined; cancelBootstrapRetry(); stopSafetyReconcile(); if (reconcileTimer !== undefined) { window.clearTimeout(reconcileTimer); reconcileTimer = undefined }; reconcilePendingSince = 0; removeOwnedUi(); restoreHistoryHooks(); initialized = false }
 
 // The popup's on-demand individual-post fallback (Phase 2) asks this content
 // script to run the extractor in the page, rather than the service worker

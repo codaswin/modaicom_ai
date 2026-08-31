@@ -1,5 +1,6 @@
 import { runGeneration } from '../features/generation/generate'
 import { isGenerationRequest } from '../features/generation/generationRequest'
+import { DEFAULT_GENERATION_PREFERENCES, isGenerationPreferences } from '../features/generation/preferences'
 import { KNOWN_PROVIDER_IDS } from '../features/generation/providers/registry'
 import type { GenerationError, GenerationResult } from '../features/generation/types'
 import {
@@ -28,8 +29,14 @@ const PROVIDER_HOST: Record<string, string> = { openai: 'https://api.openai.com/
 // supersedes and aborts the old.
 let active: { port: chrome.runtime.Port; controller: AbortController } | undefined
 
+// Accept the popup and the options page (the options page opens in a real tab,
+// so `sender.tab` is set — the reliable signal is the origin). Reject content
+// scripts, which report the web page's http(s) origin / URL. (ADR-0008)
 function isExtensionPage(sender: chrome.runtime.MessageSender | undefined): boolean {
-  return Boolean(sender && sender.id === chrome.runtime.id && sender.tab === undefined)
+  if (!sender || sender.id !== chrome.runtime.id) return false
+  if (sender.url && !sender.url.startsWith('chrome-extension://')) return false
+  if (sender.origin && sender.origin !== `chrome-extension://${chrome.runtime.id}`) return false
+  return true
 }
 
 function resultMessage(result: GenerationResult): GenerationResultMessage {
@@ -57,11 +64,20 @@ async function preflight(): Promise<GenerationResult | { model: string; provider
   return { model: config.model, providerId: config.providerId, apiKey, baseUrl: config.baseUrl }
 }
 
-async function generate(request: unknown, signal: AbortSignal): Promise<GenerationResult> {
+function composeAbortSignal(controller: AbortController): AbortSignal {
+  const timeout = AbortSignal.timeout(GENERATION_TIMEOUT_MS)
+  return typeof AbortSignal.any === 'function' ? AbortSignal.any([controller.signal, timeout]) : timeout
+}
+
+async function generate(request: unknown, preferences: unknown, signal: AbortSignal): Promise<GenerationResult> {
   if (!isGenerationRequest(request)) return errorResult('invalid-response')
+  // The message boundary rejects an unknown/malformed selection with a typed
+  // error (ADR-0010) — never a silent default. The popup always sends a valid
+  // triple, so this fires only on a bug or a version skew.
+  if (!isGenerationPreferences(preferences)) return errorResult('invalid-preferences')
   const pf = await preflight()
   if ('ok' in pf) return pf
-  return runGeneration(request, { ...pf, signal })
+  return runGeneration(request, preferences, { ...pf, signal })
 }
 
 function handlePort(port: chrome.runtime.Port): void {
@@ -77,6 +93,9 @@ function handlePort(port: chrome.runtime.Port): void {
   const controller = new AbortController()
   const session = { port, controller }
   active = session
+  // One request per port: the popup opens a fresh port per Generate/Regenerate.
+  // A second REQUEST_GENERATION on the same port is ignored.
+  let requested = false
 
   const finish = () => {
     if (active === session) active = undefined
@@ -93,8 +112,9 @@ function handlePort(port: chrome.runtime.Port): void {
       controller.abort('cancelled')
       return
     }
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(GENERATION_TIMEOUT_MS)])
-    void generate(message.request, signal)
+    if (requested) return
+    requested = true
+    void generate(message.request, message.preferences, composeAbortSignal(controller))
       .then((result) => {
         try {
           port.postMessage(resultMessage(result))
@@ -113,11 +133,18 @@ async function handleOneShot(message: unknown, sender: chrome.runtime.MessageSen
     await writeTransmissionConsent(message.providerId)
     return { ok: true }
   }
-  // TEST_PROVIDER: a minimal generation with no LinkedIn content.
-  const controller = new AbortController()
-  const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(GENERATION_TIMEOUT_MS)])
-  const result = await generate({ interactionKind: 'post-comment', postText: 'ping' }, signal)
-  return result.ok ? { ok: true } : { ok: false, error: result.error }
+  // TEST_PROVIDER: a minimal generation with no LinkedIn content and the
+  // default preference triple.
+  try {
+    const result = await generate(
+      { interactionKind: 'post-comment', postText: 'ping' },
+      DEFAULT_GENERATION_PREFERENCES,
+      composeAbortSignal(new AbortController()),
+    )
+    return result.ok ? { ok: true } : { ok: false, error: result.error }
+  } catch {
+    return { ok: false, error: { kind: 'provider-error' } }
+  }
 }
 
 export function registerGenerationHandlers(): void {
@@ -130,4 +157,4 @@ export function registerGenerationHandlers(): void {
   })
 }
 
-export { generate as runGenerationForTest }
+export { generate as runGenerationForTest, handleOneShot as handleOneShotForTest, isExtensionPage }

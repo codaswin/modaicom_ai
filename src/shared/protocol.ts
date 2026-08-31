@@ -33,7 +33,10 @@ export function isRequestPageExtractionMessage(value: unknown): value is Request
 // these messages (ADR-0008).
 // ---------------------------------------------------------------------------
 
-export const GENERATION_PROTOCOL_VERSION = 1 as const
+// v2 (Phase 7 / ADR-0010): REQUEST_GENERATION carries the selected
+// { tone, intent, length } as a `preferences` field. Popup, options page, and
+// service worker ship in one build, so the bump is a clean lockstep cutover.
+export const GENERATION_PROTOCOL_VERSION = 2 as const
 export const GENERATION_PORT_NAME = 'modaicom.generation'
 
 // Port (popup <-> service worker), request-scoped.
@@ -41,6 +44,7 @@ export type RequestGenerationMessage = {
   v: typeof GENERATION_PROTOCOL_VERSION
   type: 'REQUEST_GENERATION'
   request: unknown // validated by isGenerationRequest in the generation layer
+  preferences: unknown // validated by isGenerationPreferences in the service worker
 }
 export type CancelGenerationMessage = { v: typeof GENERATION_PROTOCOL_VERSION; type: 'CANCEL_GENERATION' }
 export type GenerationPortInbound = RequestGenerationMessage | CancelGenerationMessage
@@ -71,7 +75,7 @@ function hasGenerationVersion(value: unknown): value is Record<string, unknown> 
 export function isGenerationPortMessage(value: unknown): value is GenerationPortInbound {
   if (!hasGenerationVersion(value)) return false
   if (value.type === 'CANCEL_GENERATION') return true
-  return value.type === 'REQUEST_GENERATION' && 'request' in value
+  return value.type === 'REQUEST_GENERATION' && 'request' in value && 'preferences' in value
 }
 
 export function isGenerationOneShotMessage(value: unknown): value is GenerationOneShotMessage {

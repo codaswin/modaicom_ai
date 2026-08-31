@@ -3,6 +3,8 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { INTENTS, LENGTHS, TONES } from './features/generation/preferences'
+
 // ADR-0008: the API key must never be reachable from code that runs near
 // LinkedIn or in the popup. The eslint boundary rule blocks direct imports of
 // keyStore; this asserts nothing leaks transitively into the shipped bundles.
@@ -45,6 +47,18 @@ describe.runIf(existsSync(DIST_ASSETS))('shipped bundle hygiene', () => {
     for (const src of sources) {
       for (const marker of KEY_MARKERS) {
         expect(src.includes(marker), `content-script chunk unexpectedly contains "${marker}"`).toBe(false)
+      }
+    }
+  })
+
+  it('the content-script bundle graph contains no Response Controls instruction text (ADR-0009)', () => {
+    const sources = reachableChunks(chunkFor('inlineTrigger'))
+    const instructions = [...TONES, ...INTENTS, ...LENGTHS].map((row) => row.instruction)
+    for (const src of sources) {
+      for (const instruction of instructions) {
+        expect(src.includes(instruction), `content-script chunk unexpectedly contains a tone/intent/length instruction`).toBe(
+          false,
+        )
       }
     }
   })

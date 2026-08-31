@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,6 +9,8 @@ const tabsSendMessage = vi.fn()
 const sendMessage = vi.fn()
 const connect = vi.fn()
 const openOptionsPage = vi.fn()
+const storageGet = vi.fn()
+const storageSet = vi.fn()
 
 type FakePort = {
   postMessage: ReturnType<typeof vi.fn>
@@ -42,9 +44,14 @@ describe('Popup', () => {
     sendMessage.mockReset()
     connect.mockReset()
     openOptionsPage.mockReset()
+    storageGet.mockReset()
+    storageSet.mockReset()
+    storageGet.mockResolvedValue({})
+    storageSet.mockResolvedValue(undefined)
     vi.stubGlobal('chrome', {
       tabs: { query, sendMessage: tabsSendMessage },
       runtime: { sendMessage, connect, openOptionsPage, id: 'modaicom-test' },
+      storage: { local: { get: storageGet, set: storageSet } },
     })
   })
 
@@ -194,6 +201,39 @@ describe('Popup', () => {
     expect(openOptionsPage).toHaveBeenCalled()
   })
 
+  it('distinguishes an unreachable service worker from a not-configured provider', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example' }])
+    // GET_PROVIDER_STATUS gets no answer (stale worker / protocol skew): resolves undefined.
+    sendMessage.mockImplementation(async (msg: { type: string }) =>
+      msg.type === 'GET_PROVIDER_STATUS' ? undefined : null,
+    )
+    tabsSendMessage.mockResolvedValue(POST_RESULT)
+
+    render(<Popup />)
+
+    await screen.findByText('A useful post.')
+    expect(await screen.findByText(/Couldn.t reach modaicom.s background worker/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open settings' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(warn).toHaveBeenCalled()
+  })
+
+  it('asks for consent specifically when the key is configured but not consented', async () => {
+    query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example' }])
+    sendMessage.mockImplementation(async (msg: { type: string }) =>
+      msg.type === 'GET_PROVIDER_STATUS' ? { configured: true, consented: false } : null,
+    )
+    tabsSendMessage.mockResolvedValue(POST_RESULT)
+
+    render(<Popup />)
+
+    await screen.findByText('A useful post.')
+    expect(await screen.findByText(/consent to sending LinkedIn text/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Generate reply' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open settings' })).toBeInTheDocument()
+  })
+
   it('generates a draft over the Port and never sends author names', async () => {
     const user = userEvent.setup()
     query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example' }])
@@ -213,17 +253,19 @@ describe('Popup', () => {
 
     render(<Popup />)
     await screen.findByText('The comment body.')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: 'Generate reply' }))
 
     expect(connect).toHaveBeenCalledWith({ name: 'modaicom.generation' })
-    const sent = port.postMessage.mock.calls[0]![0] as { type: string; request: unknown }
+    const sent = port.postMessage.mock.calls[0]![0] as { type: string; request: unknown; preferences: unknown }
     expect(sent.type).toBe('REQUEST_GENERATION')
     expect(sent.request).toEqual({ interactionKind: 'comment-reply', postText: 'The post body.', commentText: 'The comment body.' })
+    expect(sent.preferences).toEqual({ tone: 'professional', intent: 'add-insight', length: 'medium' })
     expect(JSON.stringify(sent)).not.toContain('Ada Lovelace')
     expect(JSON.stringify(sent)).not.toContain('Grace Hopper')
 
     expect(screen.getByText('Drafting…')).toBeInTheDocument()
-    port.emit({ v: 1, type: 'GENERATION_RESULT', ok: true, text: 'Here is a drafted reply.' })
+    port.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Here is a drafted reply.' })
     expect(await screen.findByDisplayValue('Here is a drafted reply.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument()
@@ -241,10 +283,136 @@ describe('Popup', () => {
 
     render(<Popup />)
     await screen.findByText('A useful post.')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
     await user.click(screen.getByRole('button', { name: 'Generate reply' }))
-    port.emit({ v: 1, type: 'GENERATION_RESULT', ok: false, error: { kind: 'rate-limited' } })
+    port.emit({ v: 2, type: 'GENERATION_RESULT', ok: false, error: { kind: 'rate-limited' } })
 
     expect(await screen.findByText(/rate-limiting requests/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  describe('Response Controls', () => {
+    async function renderReady() {
+      query.mockResolvedValue([{ id: 1, url: 'https://www.linkedin.com/posts/example' }])
+      sendMessage.mockImplementation(async (msg: { type: string }) =>
+        msg.type === 'GET_PROVIDER_STATUS' ? READY_STATUS : null,
+      )
+      tabsSendMessage.mockResolvedValue(POST_RESULT)
+      render(<Popup />)
+      await screen.findByText('A useful post.')
+    }
+
+    it('renders Tone / Intent / Length selects grouped in a labelled fieldset', async () => {
+      await renderReady()
+
+      const group = screen.getByRole('group', { name: 'Response controls' })
+      expect(group).toBeInTheDocument()
+
+      const tone = screen.getByRole('combobox', { name: 'Tone' })
+      const intent = screen.getByRole('combobox', { name: 'Intent' })
+      const length = screen.getByRole('combobox', { name: 'Length' })
+
+      expect([...tone.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
+        'Professional',
+        'Friendly',
+        'Confident',
+        'Thoughtful',
+      ])
+      expect([...intent.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
+        'Support',
+        'Add insight',
+        'Ask a question',
+        'Answer',
+        'Disagree',
+        'Congratulate',
+      ])
+      expect([...length.querySelectorAll('option')].map((o) => o.textContent)).toEqual(['Short', 'Medium', 'Long'])
+
+      expect(length).toHaveAccessibleDescription(/Short = a quick reply/)
+      expect(screen.getByText(/you can still edit it/)).toBeInTheDocument()
+    })
+
+    it('defaults to Professional / Add insight / Medium when nothing is stored', async () => {
+      await renderReady()
+
+      expect(screen.getByRole('combobox', { name: 'Tone' })).toHaveValue('professional')
+      expect(screen.getByRole('combobox', { name: 'Intent' })).toHaveValue('add-insight')
+      expect(screen.getByRole('combobox', { name: 'Length' })).toHaveValue('medium')
+    })
+
+    it('reflects a previously stored selection on mount', async () => {
+      storageGet.mockResolvedValue({
+        'modaicom.generation.preferences': { tone: 'friendly', intent: 'disagree', length: 'long' },
+      })
+      await renderReady()
+
+      await waitFor(() => expect(screen.getByRole('combobox', { name: 'Tone' })).toHaveValue('friendly'))
+      expect(screen.getByRole('combobox', { name: 'Intent' })).toHaveValue('disagree')
+      expect(screen.getByRole('combobox', { name: 'Length' })).toHaveValue('long')
+    })
+
+    it('keeps a change made before the stored value has loaded', async () => {
+      let resolveGet!: (value: unknown) => void
+      storageGet.mockReturnValue(new Promise((res) => { resolveGet = res }))
+      const user = userEvent.setup()
+      await renderReady()
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Tone' }), 'confident')
+      resolveGet({ 'modaicom.generation.preferences': { tone: 'friendly', intent: 'disagree', length: 'long' } })
+      await waitFor(() => expect(storageSet).toHaveBeenCalled())
+
+      expect(screen.getByRole('combobox', { name: 'Tone' })).toHaveValue('confident')
+    })
+
+    it('persists a changed control and leaves the other two untouched', async () => {
+      const user = userEvent.setup()
+      await renderReady()
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Tone' }), 'confident')
+
+      expect(storageSet).toHaveBeenLastCalledWith({
+        'modaicom.generation.preferences': { tone: 'confident', intent: 'add-insight', length: 'medium' },
+      })
+      expect(screen.getByRole('combobox', { name: 'Intent' })).toHaveValue('add-insight')
+      expect(screen.getByRole('combobox', { name: 'Length' })).toHaveValue('medium')
+    })
+
+    it('holds Generate disabled until preferences have hydrated, then sends the stored triple', async () => {
+      let resolveGet!: (value: unknown) => void
+      storageGet.mockReturnValue(new Promise((res) => { resolveGet = res }))
+      const port = makeFakePort()
+      connect.mockReturnValue(port)
+      const user = userEvent.setup()
+      await renderReady()
+
+      expect(screen.getByRole('button', { name: 'Generate reply' })).toBeDisabled()
+
+      resolveGet({ 'modaicom.generation.preferences': { tone: 'friendly', intent: 'support', length: 'short' } })
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
+      await user.click(screen.getByRole('button', { name: 'Generate reply' }))
+
+      const sent = port.postMessage.mock.calls[0]![0] as { preferences: unknown }
+      expect(sent.preferences).toEqual({ tone: 'friendly', intent: 'support', length: 'short' })
+    })
+
+    it('Regenerate after a control change sends the new triple on a new port', async () => {
+      const firstPort = makeFakePort()
+      const secondPort = makeFakePort()
+      connect.mockReturnValueOnce(firstPort).mockReturnValueOnce(secondPort)
+      const user = userEvent.setup()
+      await renderReady()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
+
+      await user.click(screen.getByRole('button', { name: 'Generate reply' }))
+      firstPort.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Draft one.' })
+      await screen.findByDisplayValue('Draft one.')
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Length' }), 'long')
+      await user.click(screen.getByRole('button', { name: 'Regenerate' }))
+
+      expect(connect).toHaveBeenCalledTimes(2)
+      const sent = secondPort.postMessage.mock.calls[0]![0] as { preferences: { length: string } }
+      expect(sent.preferences.length).toBe('long')
+    })
   })
 })

@@ -5,6 +5,7 @@ export type GenerationErrorKind =
   | 'provider-not-configured'
   | 'api-key-missing'
   | 'transmission-not-consented'
+  | 'invalid-preferences'
   | 'authentication-failed'
   | 'rate-limited'
   | 'request-timeout'
@@ -24,6 +25,11 @@ export type GenerateOptions = {
   apiKey: string
   baseUrl?: string
   signal: AbortSignal
+  // Provider-neutral sampling knobs (ADR-0010). `maxTokens` is a cost / runaway
+  // backstop, not the length mechanism (that is the prompt). A provider maps
+  // these onto its own field names.
+  temperature?: number
+  maxTokens?: number
 }
 
 export type GenerationResult = { ok: true; text: string } | { ok: false; error: GenerationError }
@@ -37,6 +43,7 @@ export const GENERATION_ERROR_KINDS: readonly GenerationErrorKind[] = [
   'provider-not-configured',
   'api-key-missing',
   'transmission-not-consented',
+  'invalid-preferences',
   'authentication-failed',
   'rate-limited',
   'request-timeout',
@@ -52,6 +59,10 @@ const RETRYABLE = new Set<GenerationErrorKind>([
   'network-error',
   'provider-error',
   'invalid-response',
+  // The popup's stored preferences are always a valid typed triple (validated on
+  // read, with a default fallback), so this only occurs on transient protocol
+  // skew during an extension update — where retrying after the reload works.
+  'invalid-preferences',
 ])
 
 export function isRetryableGenerationError(kind: GenerationErrorKind): boolean {

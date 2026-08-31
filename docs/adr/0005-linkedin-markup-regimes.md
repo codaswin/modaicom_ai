@@ -47,3 +47,19 @@ Selectors earn their place by being verified against live LinkedIn (ADR-0003):
 `docs/testing/linkedin-selectors.md` holds the per-regime table, a verification
 snippet, and a dated log. A selector for a markup variant we cannot currently
 point at is removed, not kept "just in case".
+
+## Reconcile robustness on `sdui` (revision, 2026-08-31)
+
+The `sdui` feed hydrates progressively and mutates continuously, which made the
+debounced-MutationObserver-only approach from ADR-0003 unreliable: the observer
+could be scoped to `<main>` before `[data-testid="mainFeed"]` existed, and a burst
+of feed mutations could starve the 50 ms trailing debounce so a newly opened
+comment composer was never reconciled (the trigger "sometimes" appeared, and a
+page refresh was the workaround). The reconcile loop now: keeps a coarse observer
+on `<main>` alongside the precise feed-container scope; keeps bootstrap discovery
+retrying (longer budget) until the real feed container is found; adds a
+max-wait so the debounce cannot be starved; and runs a **low-frequency
+(~1.5 s) idempotent safety re-scan** while a supported route is open. This
+relaxes ADR-0003's "no continuous polling" for the feed surface only — the
+re-scan is structural-only, reads no authored/editor text, and is the minimum
+needed to make a lazily-mounted composer's trigger appear reliably.

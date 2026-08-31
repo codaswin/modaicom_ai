@@ -5,6 +5,7 @@ import { composerIsEligible, handlePagePopupExtractionRequest, isSupportedRoute,
 describe('inline trigger content boundary', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    teardownInlineTriggerContentScript()
     document.body.innerHTML = ''
   })
 
@@ -35,6 +36,35 @@ describe('inline trigger content boundary', () => {
     })
     expect(handlePagePopupExtractionRequest({ version: 2, type: 'GET_LATEST_RELAY' })).toBeUndefined()
     expect(handlePagePopupExtractionRequest(null)).toBeUndefined()
+  })
+
+  it('the safety re-scan picks up a composer the observer missed', () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('location', { href: 'https://www.linkedin.com/feed/' })
+    try {
+      document.body.innerHTML = `
+        <main><div data-testid="mainFeed" role="list">
+          <div componentkey="k_MAIN_FEED"><div role="listitem" id="p">
+            <img alt="View Ada author's profile" />
+            <div data-testid="expandable-text-box">Post.</div>
+          </div></div>
+        </div></main>`
+      teardownInlineTriggerContentScript()
+      initializeInlineTriggerContentScript()
+      expect(document.querySelectorAll('[data-modaicom-inline-wrapper]').length).toBe(0)
+
+      // a comment composer mounts without triggering the observer callback
+      const holder = document.createElement('div')
+      holder.innerHTML = '<div contenteditable="true" role="textbox" aria-label="Text editor for creating comment" class="tiptap"></div>'
+      document.getElementById('p')!.append(holder)
+
+      vi.advanceTimersByTime(1600)
+      expect(document.querySelectorAll('[data-modaicom-inline-wrapper]').length).toBe(1)
+    } finally {
+      teardownInlineTriggerContentScript()
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
   })
 
   it('supports only the feed and recognized individual-post routes', () => {

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import { contextToGenerationRequest, isGenerationRequest } from './generationRequest'
+import { preferencesToInstructions } from './preferences'
 import { buildGenerationInput } from './prompt'
 import type { LinkedInInteractionContext } from '../linkedin-context/interactionContext'
+
+const INSTRUCTIONS = preferencesToInstructions({ tone: 'confident', intent: 'disagree', length: 'short' })
 
 const fullPostContext: LinkedInInteractionContext = {
   kind: 'comment-reply',
@@ -65,7 +68,10 @@ describe('isGenerationRequest — strict guard', () => {
 
 describe('buildGenerationInput', () => {
   it('produces { system, user } with the authored text and no PII', () => {
-    const input = buildGenerationInput({ interactionKind: 'comment-reply', postText: 'The post.', commentText: 'The comment.' })
+    const input = buildGenerationInput(
+      { interactionKind: 'comment-reply', postText: 'The post.', commentText: 'The comment.' },
+      INSTRUCTIONS,
+    )
     expect(typeof input.system).toBe('string')
     expect(input.user).toContain('The post.')
     expect(input.user).toContain('The comment.')
@@ -73,8 +79,19 @@ describe('buildGenerationInput', () => {
   })
 
   it('frames a post-comment as a top-level comment', () => {
-    const input = buildGenerationInput({ interactionKind: 'post-comment', postText: 'The post.' })
+    const input = buildGenerationInput({ interactionKind: 'post-comment', postText: 'The post.' }, INSTRUCTIONS)
     expect(input.user).toContain('The post.')
     expect(input.user.toLowerCase()).toContain('top-level comment')
+  })
+
+  it('renders the instructions into system as a mandatory list, and no longer bakes in length or tone', () => {
+    const input = buildGenerationInput({ interactionKind: 'post-comment', postText: 'The post.' }, INSTRUCTIONS)
+    for (const line of INSTRUCTIONS) expect(input.system).toContain(line)
+    expect(input.system).toMatch(/must do all of the following/i)
+    // the instructions appear in [intent, tone, length] order
+    const positions = INSTRUCTIONS.map((line) => input.system.indexOf(line))
+    expect(positions).toEqual([...positions].sort((a, b) => a - b))
+    expect(input.system).not.toContain('2 to 4 sentences')
+    expect(input.system).not.toContain('warm but not effusive')
   })
 })
