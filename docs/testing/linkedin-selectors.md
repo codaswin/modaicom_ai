@@ -24,7 +24,9 @@ LinkedIn URLs, post/comment content, screenshots, or account data.
 | Feed container | `main [role="feed"]`, `main .scaffold-finite-scroll__content` |
 | Post root | `article` / `.feed-shared-update-v2` with `data-urn`/`data-id` starting `urn:li:activity:` |
 | Post body | `[data-testid="post-body"]`, `.feed-shared-update-v2__description`, `.feed-shared-inline-show-more-text`, `.update-components-text` |
-| Author | `[data-testid="actor-name"]`, `.update-components-actor__name`, `[aria-label^="By "]` |
+| Author | `[data-testid="actor-name"]`, `.update-components-actor__name`, `.update-components-actor__title span[aria-hidden="true"]` (current — name is printed twice, visible + screen-reader, then " • 1st" / "Verified"; the extractor collapses the repeat and strips the chrome), `.update-components-actor__title`, `[aria-label^="By "]` |
+| Author headline | `[data-testid="actor-headline"]`, `.update-components-actor__description` |
+| Post time | `time`, `.update-components-actor__sub-description` (mashes "1d • 1 day ago • Visible to anyone…"; extractor keeps the leading token) |
 | Comment composer | editor inside `.comments-comment-box` / `.comments-comment-texteditor` / `[data-testid="comment-composer"]`; labelled `aria-label*="comment"` or `aria-placeholder*="comment"` |
 | Collapsed | a control inside the body whose text matches `see more` |
 | Stable identity | `data-urn` / `data-id` (`urn:li:activity:…`) |
