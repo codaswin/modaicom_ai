@@ -26,6 +26,9 @@ type InsertSession = {
   generation: number
   route: string
   stashedAt: number
+  // The exact text modaicom last inserted here, so a later Regenerate + Insert
+  // can replace an untouched prior insertion (and only that).
+  lastInserted?: string
 }
 let insertSession: InsertSession | undefined
 function clearInsertSession(): void {
@@ -280,7 +283,8 @@ export function handleInsertDraftRequest(message: unknown): InsertDraftResponse 
     return { ok: true }
   }
 
-  const outcome = insertDraft(session.editor, message.text)
+  const outcome = insertDraft(session.editor, message.text, { previousInsertion: session.lastInserted })
+  if (outcome.ok) session.lastInserted = editorPlainText(session.editor)
   recordDiagnostic({ stage, event: 'insertion', extractionOutcome: outcome.ok ? 'success' : outcome.reason })
   return outcome
 }

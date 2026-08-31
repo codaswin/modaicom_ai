@@ -20,7 +20,7 @@ export type UseInsert = {
 // One-shot popup -> content-script insertion (chrome.tabs.sendMessage). Not a
 // long-lived Port like useGeneration — a single request/response. The draft text
 // never touches the service worker.
-export function useInsert(): UseInsert {
+export function useInsert(onInserted?: () => void): UseInsert {
   const [state, setState] = useState<InsertState>({ phase: 'idle' })
 
   const insert = useCallback(({ text, sessionId, generation }: InsertArgs) => {
@@ -41,6 +41,7 @@ export function useInsert(): UseInsert {
         })
         if (reply && typeof reply === 'object' && (reply as { ok?: unknown }).ok === true) {
           setState({ phase: 'done' })
+          onInserted?.()
           return
         }
         const reason = (reply as { reason?: unknown } | undefined)?.reason
@@ -50,7 +51,7 @@ export function useInsert(): UseInsert {
         setState({ phase: 'error', reason: 'wrong-tab' })
       }
     })()
-  }, [])
+  }, [onInserted])
 
   const reset = useCallback(() => setState({ phase: 'idle' }), [])
 

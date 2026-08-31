@@ -41,6 +41,10 @@ function placeCaretAtEnd(editor: HTMLElement): void {
   selection.addRange(range)
 }
 
+// Writes `text` into the editor, replacing whatever is currently selected. The
+// caller selects the whole editor first when it means to replace; for an empty
+// editor the (empty) selection makes this a plain insert. `execCommand`
+// replaces the selection, so one path covers both.
 export function writeIntoEditor(editor: HTMLElement, text: string): boolean {
   if (editor instanceof HTMLTextAreaElement) {
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
@@ -49,19 +53,45 @@ export function writeIntoEditor(editor: HTMLElement, text: string): boolean {
     editor.dispatchEvent(new Event('input', { bubbles: true }))
     return editor.value === text
   }
-  editor.focus()
-  placeCaretAtEnd(editor)
   const doc = editor.ownerDocument
   if (typeof doc.execCommand !== 'function') return false
   return doc.execCommand('insertText', false, text)
 }
 
-// Orchestration: empty-check -> write -> verify by readback -> leave caret at
-// end. Ticket 2 scope: only an empty editor is written; anything else refuses.
-export function insertDraft(editor: HTMLElement, text: string, write: EditorWriter = writeIntoEditor): InsertOutcome {
-  if (!isEditorEmpty(editor)) return { ok: false, reason: 'editor-not-empty' }
+function selectAllContents(editor: HTMLElement): void {
+  editor.focus()
+  const selection = editor.ownerDocument.getSelection()
+  if (!selection) return
+  const range = editor.ownerDocument.createRange()
+  range.selectNodeContents(editor)
+  selection.removeAllRanges()
+  selection.addRange(range)
+}
+
+export type InsertDraftOptions = {
+  // The exact text modaicom last inserted into this editor this session. If the
+  // editor still holds precisely that (the user hasn't touched it), a re-insert
+  // may replace it. Anything else in the editor is the user's own work.
+  previousInsertion?: string
+  write?: EditorWriter
+}
+
+// Orchestration: no-op if the draft is already there; otherwise write only into
+// an editor that is empty or holds modaicom's own untouched prior insertion;
+// verify by readback; leave the caret at the end.
+export function insertDraft(editor: HTMLElement, text: string, options: InsertDraftOptions = {}): InsertOutcome {
+  const write = options.write ?? writeIntoEditor
+  const current = editorPlainText(editor)
+  const trimmed = text.trim()
+
+  if (current === trimmed) return { ok: true }
+
+  const replacingOwn = options.previousInsertion !== undefined && current === options.previousInsertion.trim()
+  if (current !== '' && !replacingOwn) return { ok: false, reason: 'editor-not-empty' }
+
+  if (!(editor instanceof HTMLTextAreaElement)) selectAllContents(editor)
   if (!write(editor, text)) return { ok: false, reason: 'insert-failed' }
-  if (!editorPlainText(editor).includes(text.trim())) return { ok: false, reason: 'insert-failed' }
+  if (!editorPlainText(editor).includes(trimmed)) return { ok: false, reason: 'insert-failed' }
   placeCaretAtEnd(editor)
   return { ok: true }
 }

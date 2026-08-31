@@ -484,6 +484,37 @@ describe('Popup', () => {
       expect(await screen.findByText(/Switch to the LinkedIn tab where you started/)).toBeInTheDocument()
     })
 
+    it('after an insert, Regenerate offers "Replace with new draft"', async () => {
+      query.mockResolvedValue([{ id: 7, url: 'https://www.linkedin.com/feed/update/urn:li:activity:1/' }])
+      sendMessage.mockImplementation(async (msg: { type: string }) => {
+        if (msg.type === 'GET_PROVIDER_STATUS') return READY_STATUS
+        if (msg.type === 'GET_LATEST_RELAY') return RELAY_SUCCESS
+        return null
+      })
+      const p1 = makeFakePort()
+      const p2 = makeFakePort()
+      connect.mockReturnValueOnce(p1).mockReturnValueOnce(p2)
+      tabsSendMessage.mockResolvedValue({ ok: true })
+      const user = userEvent.setup()
+
+      render(<Popup />)
+      await screen.findByText('A useful post.')
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Generate reply' })).toBeEnabled())
+      await user.click(screen.getByRole('button', { name: 'Generate reply' }))
+      p1.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Draft one.' })
+      await screen.findByDisplayValue('Draft one.')
+
+      await user.click(screen.getByRole('button', { name: 'Insert' }))
+      await screen.findByText(/Inserted into your LinkedIn comment box/)
+
+      await user.click(screen.getByRole('button', { name: 'Regenerate' }))
+      p2.emit({ v: 2, type: 'GENERATION_RESULT', ok: true, text: 'Draft two.' })
+      await screen.findByDisplayValue('Draft two.')
+
+      expect(screen.getByRole('button', { name: 'Replace with new draft' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Insert' })).not.toBeInTheDocument()
+    })
+
     it('offers no Insert when the draft came from the on-demand fallback (no session)', async () => {
       query.mockResolvedValue([{ id: 7, url: 'https://www.linkedin.com/posts/example' }])
       sendMessage.mockImplementation(async (msg: { type: string }) =>

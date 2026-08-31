@@ -10,8 +10,12 @@ function contentEditable(html = ''): HTMLElement {
   return el
 }
 
-// A stub writer that mimics execCommand('insertText') into an empty editor.
-const appendWriter = (editor: HTMLElement, text: string): boolean => {
+// A stub writer that mimics execCommand('insertText'): it replaces the current
+// selection, so a full-editor selection means replace and a collapsed one means
+// plain insert.
+const stubWriter = (editor: HTMLElement, text: string): boolean => {
+  const sel = editor.ownerDocument.getSelection()
+  if (sel && sel.rangeCount > 0 && !sel.getRangeAt(0).collapsed) sel.getRangeAt(0).deleteContents()
   editor.textContent = (editor.textContent ?? '') + text
   return true
 }
@@ -29,6 +33,13 @@ describe('editorPlainText / isEditorEmpty', () => {
     expect(isEditorEmpty(contentEditable(html))).toBe(empty)
   })
 
+  it('ignores a placeholder attribute (only textContent counts)', () => {
+    const el = contentEditable('')
+    el.setAttribute('data-placeholder', 'Add a comment…')
+    el.setAttribute('aria-placeholder', 'Add a comment…')
+    expect(isEditorEmpty(el)).toBe(true)
+  })
+
   it('trims surrounding whitespace from the reported text', () => {
     expect(editorPlainText(contentEditable('  <p>hi there</p>  '))).toBe('hi there')
   })
@@ -37,34 +48,57 @@ describe('editorPlainText / isEditorEmpty', () => {
 describe('insertDraft', () => {
   it('writes into an empty editor and reports success', () => {
     const editor = contentEditable('<p><br></p>')
-    const write = vi.fn(appendWriter)
-    expect(insertDraft(editor, 'A drafted reply.', write)).toEqual({ ok: true })
-    expect(write).toHaveBeenCalledWith(editor, 'A drafted reply.')
-    expect(editorPlainText(editor)).toContain('A drafted reply.')
+    const write = vi.fn(stubWriter)
+    expect(insertDraft(editor, 'A drafted reply.', { write })).toEqual({ ok: true })
+    expect(editorPlainText(editor)).toBe('A drafted reply.')
   })
 
-  it('refuses when the editor already contains user text', () => {
+  it('is a no-op when the editor already holds exactly this draft', () => {
+    const editor = contentEditable('<p>A drafted reply.</p>')
+    const write = vi.fn(stubWriter)
+    expect(insertDraft(editor, 'A drafted reply.', { write })).toEqual({ ok: true })
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  it('refuses when the editor contains text the user wrote', () => {
     const editor = contentEditable('<p>Half a thought</p>')
-    const write = vi.fn(appendWriter)
-    expect(insertDraft(editor, 'A drafted reply.', write)).toEqual({ ok: false, reason: 'editor-not-empty' })
+    const write = vi.fn(stubWriter)
+    expect(insertDraft(editor, 'A drafted reply.', { write })).toEqual({ ok: false, reason: 'editor-not-empty' })
     expect(write).not.toHaveBeenCalled()
     expect(editorPlainText(editor)).toBe('Half a thought')
   })
 
+  it('replaces modaicom’s own untouched prior insertion', () => {
+    const editor = contentEditable('<p>Old modaicom draft.</p>')
+    expect(
+      insertDraft(editor, 'New modaicom draft.', { previousInsertion: 'Old modaicom draft.', write: stubWriter }),
+    ).toEqual({ ok: true })
+    expect(editorPlainText(editor)).toBe('New modaicom draft.')
+  })
+
+  it('refuses when the prior insertion has been edited by even one character', () => {
+    const editor = contentEditable('<p>Old modaicom draft, plus my edit.</p>')
+    expect(
+      insertDraft(editor, 'New modaicom draft.', { previousInsertion: 'Old modaicom draft.', write: stubWriter }),
+    ).toEqual({ ok: false, reason: 'editor-not-empty' })
+    expect(editorPlainText(editor)).toBe('Old modaicom draft, plus my edit.')
+  })
+
   it('reports insert-failed when the writer returns false', () => {
-    const editor = contentEditable()
-    expect(insertDraft(editor, 'A drafted reply.', () => false)).toEqual({ ok: false, reason: 'insert-failed' })
+    expect(insertDraft(contentEditable(), 'A drafted reply.', { write: () => false })).toEqual({
+      ok: false,
+      reason: 'insert-failed',
+    })
   })
 
   it('reports insert-failed when the writer claims success but the text is not there', () => {
-    const editor = contentEditable()
-    expect(insertDraft(editor, 'A drafted reply.', () => true)).toEqual({ ok: false, reason: 'insert-failed' })
+    expect(insertDraft(contentEditable(), 'A drafted reply.', { write: () => true })).toEqual({
+      ok: false,
+      reason: 'insert-failed',
+    })
   })
 
   it('uses the real writer by default, which fails closed without execCommand (jsdom)', () => {
-    // jsdom has no document.execCommand — the real primitive returns false and
-    // insertDraft surfaces insert-failed rather than a silent nothing.
-    const editor = contentEditable()
-    expect(insertDraft(editor, 'A drafted reply.')).toEqual({ ok: false, reason: 'insert-failed' })
+    expect(insertDraft(contentEditable(), 'A drafted reply.')).toEqual({ ok: false, reason: 'insert-failed' })
   })
 })

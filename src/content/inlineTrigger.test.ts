@@ -354,7 +354,9 @@ describe('inline trigger content boundary', () => {
         configurable: true,
         value: (cmd: string, _ui: boolean, val: string) => {
           if (cmd !== 'insertText') return false
-          editor.textContent = (editor.textContent ?? '') + val
+          const sel = document.getSelection()
+          if (sel && sel.rangeCount > 0 && !sel.getRangeAt(0).collapsed) sel.getRangeAt(0).deleteContents()
+          editor.textContent = (editor.textContent ?? '') + String(val)
           return true
         },
       })
@@ -410,6 +412,29 @@ describe('inline trigger content boundary', () => {
       stubExecCommand(editor)
       expect(handleInsertDraftRequest(MSG({ sessionId, generation }))).toEqual({ ok: false, reason: 'editor-not-empty' })
       expect(editor.textContent).toBe('Half a sentence I typed')
+    })
+
+    it('replaces its own untouched prior insertion on a second Insert (Regenerate loop)', async () => {
+      const { editor, sessionId, generation } = await startSession()
+      stubExecCommand(editor)
+      expect(handleInsertDraftRequest(MSG({ sessionId, generation }))).toEqual({ ok: true })
+      expect(editor.textContent).toBe(DRAFT)
+
+      const NEXT = 'A regenerated, different reply.'
+      expect(handleInsertDraftRequest(MSG({ sessionId, generation, text: NEXT }))).toEqual({ ok: true })
+      expect(editor.textContent).toBe(NEXT) // replaced, not appended
+    })
+
+    it('refuses once the user has edited modaicom’s prior insertion', async () => {
+      const { editor, sessionId, generation } = await startSession()
+      stubExecCommand(editor)
+      handleInsertDraftRequest(MSG({ sessionId, generation }))
+      editor.textContent = `${DRAFT} — and a thought of my own`
+
+      expect(handleInsertDraftRequest(MSG({ sessionId, generation, text: 'Another draft.' }))).toEqual({
+        ok: false,
+        reason: 'editor-not-empty',
+      })
     })
 
     it.each([

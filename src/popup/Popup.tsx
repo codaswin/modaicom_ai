@@ -18,7 +18,7 @@ import { GENERATION_PROTOCOL_VERSION, type InsertFailureKind } from '../shared/p
 import { RELAY_VERSION } from '../shared/relay'
 import { readPreferences, writePreferences } from './preferencesStore'
 import { useGeneration, type UseGeneration } from './useGeneration'
-import { useInsert } from './useInsert'
+import { useInsert, type UseInsert } from './useInsert'
 import './popup.css'
 
 // The Inline Targeting Session a relayed context belongs to. Present only for
@@ -147,9 +147,20 @@ const insertErrorMessages = {
   'wrong-tab': 'Switch to the LinkedIn tab where you started, then Insert.',
 } satisfies Record<InsertFailureKind, string>
 
-function DraftView({ text, session, onRegenerate }: { text: string; session: RelaySession | null; onRegenerate: () => void }) {
+function DraftView({
+  text,
+  session,
+  ins,
+  insertedOnce,
+  onRegenerate,
+}: {
+  text: string
+  session: RelaySession | null
+  ins: UseInsert
+  insertedOnce: boolean
+  onRegenerate: () => void
+}) {
   const [copied, setCopied] = useState(false)
-  const ins = useInsert()
   const canInsert = Boolean(session?.sessionId)
   const runInsert = () => {
     if (session?.sessionId) ins.insert({ text, sessionId: session.sessionId, generation: session.generation })
@@ -166,6 +177,8 @@ function DraftView({ text, session, onRegenerate }: { text: string; session: Rel
     )
   }
 
+  const insertLabel = ins.state.phase === 'inserting' ? 'Inserting…' : insertedOnce ? 'Replace with new draft' : 'Insert'
+
   return (
     <div className="draft">
       <label className="draft__label" htmlFor="modaicom-draft">Suggested draft</label>
@@ -174,7 +187,7 @@ function DraftView({ text, session, onRegenerate }: { text: string; session: Rel
       <div className="draft__actions">
         {canInsert && (
           <button className="retry-button" onClick={runInsert} disabled={ins.state.phase === 'inserting'}>
-            {ins.state.phase === 'inserting' ? 'Inserting…' : 'Insert'}
+            {insertLabel}
           </button>
         )}
         <button className="retry-button" onClick={() => { void navigator.clipboard?.writeText(text).then(() => setCopied(true)) }}>
@@ -303,10 +316,14 @@ function GenerationPanel({
   onRetryStatus: () => void
 }) {
   const preferences = usePreferences()
+  const [insertedOnce, setInsertedOnce] = useState(false)
+  const ins = useInsert(() => setInsertedOnce(true))
   const request = contextToGenerationRequest(context)
   // Only ever generates with the current, hydrated selection (ADR-0010).
   const run = () => {
-    if (preferences.ready) gen.generate(request, preferences.prefs)
+    if (!preferences.ready) return
+    if (ins.state.phase !== 'idle') ins.reset()
+    gen.generate(request, preferences.prefs)
   }
 
   if (status !== null && !isProviderStatus(status)) {
@@ -344,7 +361,9 @@ function GenerationPanel({
       {state.phase === 'generating' && (
         <><p className="generation__hint" role="status">Drafting…</p><button className="retry-button" onClick={gen.cancel}>Stop</button></>
       )}
-      {state.phase === 'done' && <DraftView text={state.text} session={session} onRegenerate={run} />}
+      {state.phase === 'done' && (
+        <DraftView text={state.text} session={session} ins={ins} insertedOnce={insertedOnce} onRegenerate={run} />
+      )}
       {state.phase === 'error' && (
         <>
           <p className="generation__error">{generationErrorMessages[state.kind]}</p>
