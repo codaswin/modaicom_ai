@@ -8,7 +8,7 @@
   An open-source Chrome extension that understands the post or comment you choose,
   drafts a response in your voice, and leaves the final word—and the Post button—to you.
 
-  [![Release](https://img.shields.io/github/v/release/codaswin/modaicom_ai?style=flat-square&color=5b3fd6)](https://github.com/codaswin/modaicom_ai/releases/latest)
+  [![Release](https://img.shields.io/badge/release-v1.0.0-5b3fd6?style=flat-square&logo=github&logoColor=white)](https://github.com/codaswin/modaicom_ai/releases/latest)
   [![CI](https://img.shields.io/github/actions/workflow/status/codaswin/modaicom_ai/ci.yml?branch=main&style=flat-square&label=checks)](https://github.com/codaswin/modaicom_ai/actions/workflows/ci.yml)
   [![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](manifest.config.ts)
   [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](tsconfig.json)
