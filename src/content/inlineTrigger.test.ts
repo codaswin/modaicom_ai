@@ -385,6 +385,30 @@ describe('inline trigger content boundary', () => {
     main.remove()
   })
 
+  it('does not dock into an action row shared with a second (reply) editor', () => {
+    const main = document.createElement('main')
+    main.innerHTML = `
+      <div class="feed-shared-update-v2" data-urn="urn:li:activity:1">
+        <div data-testid="post-body">Post body.</div>
+        <form class="comments-comment-box">
+          <div contenteditable="true" aria-label="Add a comment"></div>
+          <div class="reply-thread">
+            <div contenteditable="true" aria-placeholder="Add a reply…"></div>
+            <button type="button" aria-label="Open Emoji Keyboard">🙂</button>
+          </div>
+        </form>
+      </div>`
+    document.body.append(main)
+    reconcile(ACTIVITY_URL)
+
+    const emoji = main.querySelector('button[aria-label="Open Emoji Keyboard"]') as HTMLElement
+    // the post-comment trigger must NOT have been slipped in beside the reply's emoji button
+    expect((emoji.previousElementSibling as HTMLElement | null)?.matches('[data-modaicom-inline-wrapper]')).not.toBe(true)
+    const editor = main.querySelector('[aria-label="Add a comment"]') as HTMLElement
+    expect((editor.nextElementSibling as HTMLElement).matches('[data-modaicom-inline-wrapper]')).toBe(true)
+    main.remove()
+  })
+
   it('gives one comment-reply trigger per distinct target comment', () => {
     const main = legacyPostWithComment('urn:li:comment:(activity:1,10)')
     const post = main.querySelector('.feed-shared-update-v2')!

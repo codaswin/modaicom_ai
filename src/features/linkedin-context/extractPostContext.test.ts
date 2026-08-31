@@ -256,11 +256,63 @@ describe('extractPostContextFromDocument', () => {
       </article>`)).toMatchObject({ kind: 'success', context: { authorDisplayName: 'Ada Lovelace', originalAuthoredText: 'Current feed text.' } })
   })
 
+  it('extracts the current actor__title markup with duplicated name and connection chrome', () => {
+    // The activity-permalink markup LinkedIn now ships: a div[data-urn] root,
+    // the name in .update-components-actor__title as visible + screen-reader
+    // copies plus "• 1st" / "Verified", and description / sub-description for
+    // headline and time.
+    const target = page(
+      `
+      <div class="feed-shared-update-v2" role="article" data-urn="urn:li:activity:7499661622991515648">
+        <div class="update-components-actor__container">
+          <a class="update-components-actor__meta-link" href="https://www.linkedin.com/in/vishnuhari-h">
+            <span class="update-components-actor__title">
+              <span class="hoverable-link-text">
+                <span aria-hidden="true">Vishnuhari Harikumar</span>
+                <span class="visually-hidden">Vishnuhari Harikumar</span>
+              </span>
+              <span class="text-body-xsmall"><span aria-hidden="true">• 1st</span><span class="visually-hidden">Verified • 1st</span></span>
+            </span>
+            <span class="update-components-actor__description">On a Mission to create 1M Digital Entrepreneurs with AIOn a Mission to create 1M Digital Entrepreneurs with AI</span>
+            <span class="update-components-actor__sub-description"><span aria-hidden="true"><time>1d</time> • </span><span class="visually-hidden">1 day ago • Visible to anyone</span></span>
+          </a>
+        </div>
+        <div class="update-components-text"><span>I used to think marketing was everything.</span></div>
+      </div>`,
+      'https://www.linkedin.com/feed/update/urn:li:activity:7499661622991515648/',
+    )
+    const post = target.document.querySelector('.feed-shared-update-v2') as Element
+    expect(extractPostContextFromElementInPage(post, target.url)).toMatchObject({
+      kind: 'success',
+      context: {
+        authorDisplayName: 'Vishnuhari Harikumar',
+        originalAuthoredText: 'I used to think marketing was everything.',
+        authorHeadline: 'On a Mission to create 1M Digital Entrepreneurs with AI',
+        publicationTimeLabel: '1d',
+        stablePostIdentifier: 'urn:li:activity:7499661622991515648',
+      },
+    })
+  })
+
   it('never includes the URL in context', () => {
     const result = extract(
       '<article data-urn="urn:li:activity:123"><div data-testid="actor-name">Ada</div><div data-testid="post-body">Text</div></article>',
     )
     expect(JSON.stringify(result)).not.toContain('linkedin.com')
+  })
+
+  it.each([
+    ['a legitimately reduplicated name is not halved', 'Yang Yang', 'Yang Yang'],
+    ['a brand with an ordinal-like token is kept intact', 'Studio 21st Century', 'Studio 21st Century'],
+    ['a company name with a pipe is kept intact', 'Nike | Just Do It', 'Nike | Just Do It'],
+    ['the doubled clean name from the title collapses', 'Ada LovelaceAda Lovelace', 'Ada Lovelace'],
+    ['the connection-degree chrome is stripped', 'Ada Lovelace • 1st', 'Ada Lovelace'],
+    ['a trailing bare degree is stripped', 'Ada Lovelace 2nd', 'Ada Lovelace'],
+  ])('cleanActorName: %s', (_label, rendered, expected) => {
+    const result = extract(
+      `<article data-urn="urn:li:activity:1"><span class="update-components-actor__title">${rendered}</span><div data-testid="post-body">Body text.</div></article>`,
+    )
+    expect(result).toMatchObject({ kind: 'success', context: { authorDisplayName: expected } })
   })
 })
 

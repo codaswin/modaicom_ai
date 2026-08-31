@@ -146,13 +146,55 @@ export function extractPostContextInPage(
     return { kind: 'collapsed-post' }
   }
 
+  // Returns the text of the first element — across every selector, in order —
+  // that both belongs to this post and actually has text. Not `findElement`,
+  // which stops at the first *matching* element even when it is empty (a
+  // decorative `aria-hidden` span can sort before the real one).
   const textFrom = (selectors: string[]) => {
-    const element = findElement(selectors)
-    if (!element) return undefined
-    const text =
-      normalizeText(element) || element.getAttribute('aria-label')?.trim()
-    return text || undefined
+    for (const selector of selectors) {
+      for (const element of Array.from(candidate.querySelectorAll<HTMLElement>(selector))) {
+        if (!belongsToCandidate(element)) continue
+        const text = normalizeText(element) || element.getAttribute('aria-label')?.trim()
+        if (text) return text
+      }
+    }
+    return undefined
   }
+
+  // LinkedIn's actor block prints each string twice — once visibly, once for
+  // screen readers — often with no separator ("HeadlineHeadline"). Collapse an
+  // exact repeat.
+  const collapseDoubled = (line: string): string => {
+    const half = line.length / 2
+    return Number.isInteger(half) && half > 0 && line.slice(0, half) === line.slice(half)
+      ? line.slice(0, half)
+      : line
+  }
+
+  const firstNonEmptyLine = (raw: string | undefined): string =>
+    raw?.split('\n').map((line) => line.trim()).find(Boolean) ?? ''
+
+  // A person's name additionally carries connection-degree / "Verified" chrome
+  // ("Ada Lovelace Ada Lovelace • 1st Verified"). Strip the chrome *first*, then
+  // collapse the exact repeat — so a legitimately reduplicated name ("Yang
+  // Yang", "Duran Duran") is only ever collapsed when both halves are byte-
+  // identical, never rewritten by a lazy back-reference. The chrome patterns are
+  // deliberately narrow: a spaced bullet, or a trailing bare 1st/2nd/3rd — so
+  // "Studio 21st Century" and "Nike | Just Do It" pass through untouched.
+  const cleanActorName = (raw: string | undefined): string | undefined => {
+    if (!raw) return undefined
+    const stripped = firstNonEmptyLine(raw)
+      .replace(/^By\s+/i, '')
+      .replace(/\s+[•·]\s.*$/, '')
+      .replace(/\s+[123](?:st|nd|rd)\+?\s*$/i, '')
+      .replace(/\s*\bVerified\b\s*/gi, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+    return collapseDoubled(stripped).trim() || undefined
+  }
+
+  const cleanActorLine = (raw: string | undefined): string | undefined =>
+    raw ? collapseDoubled(firstNonEmptyLine(raw)).trim() || undefined : undefined
 
   const sduiAuthorName = () => {
     if (!candidate.matches(SDUI_FEED_POST_ROOT_SELECTOR)) return undefined
@@ -168,20 +210,22 @@ export function extractPostContextInPage(
       candidate.querySelectorAll<HTMLAnchorElement>('a[href*="/in/"], a[href*="/company/"], a[href*="/school/"]'),
     ).find((link) => (link.textContent ?? '').trim().length > 0)
     if (!actorLink) return undefined
-    const cleaned = (normalizeText(actorLink).split('\n')[0] ?? '')
-      .replace(/\s*[•·].*$/, '')
-      .replace(/\s+\d(?:st|nd|rd|th)\+?$/i, '')
-      .trim()
-    return cleaned || undefined
+    return cleanActorName(normalizeText(actorLink))
   }
 
-  const authorDisplayName = (textFrom([
-    '[data-testid="actor-name"]',
-    '[data-test-id="feed-shared-actor__name"]',
-    '.update-components-actor__name',
-    '[data-view-name="feed-actor-name"]',
-    '[aria-label^="By "]',
-  ]) ?? sduiAuthorName())?.replace(/^By\s+/i, '')
+  const authorDisplayName = cleanActorName(
+    textFrom([
+      '[data-testid="actor-name"]',
+      '[data-test-id="feed-shared-actor__name"]',
+      '.update-components-actor__name',
+      // Current LinkedIn actor markup (activity permalink / individual post):
+      // the clean name is the screen-reader/visible span pair inside the title.
+      '.update-components-actor__title span[aria-hidden="true"]',
+      '.update-components-actor__title',
+      '[data-view-name="feed-actor-name"]',
+      '[aria-label^="By "]',
+    ]) ?? sduiAuthorName(),
+  )
   if (!authorDisplayName) {
     return { kind: 'author-not-found' }
   }
@@ -193,15 +237,21 @@ export function extractPostContextInPage(
     return { kind: 'no-text' }
   }
 
-  const authorHeadline = textFrom([
-    '[data-testid="actor-headline"]',
-    '[data-test-id="feed-shared-actor__description"]',
-  ])
-  const publicationTimeLabel = textFrom([
-    'time',
-    '[data-testid="post-time"]',
-    '[data-test-id="feed-shared-actor__sub-description"]',
-  ])
+  const authorHeadline = cleanActorLine(
+    textFrom([
+      '[data-testid="actor-headline"]',
+      '[data-test-id="feed-shared-actor__description"]',
+      '.update-components-actor__description',
+    ]),
+  )
+  // `<time>` is the reliable, already-clean source on current markup. The
+  // sub-description block ("1d • 1 day ago • Visible to anyone…", visible + SR
+  // copies mashed with no separator) is deliberately not used — it garbles more
+  // often than it helps, and this label is cosmetic.
+  const rawTimeLabel = textFrom(['time', '[data-testid="post-time"]', '[data-test-id="feed-shared-actor__sub-description"]'])
+  const publicationTimeLabel = rawTimeLabel
+    ? firstNonEmptyLine(rawTimeLabel).split(/\s+[•·]\s/)[0]!.trim() || undefined
+    : undefined
 
   const explicitIdentifier = stablePostIdentity(candidate)
   const stablePostIdentifier =

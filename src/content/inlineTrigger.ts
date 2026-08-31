@@ -143,6 +143,11 @@ function dockTriggerInActionRow(editor: HTMLElement, host: HTMLElement): boolean
     editor.parentElement?.parentElement ??
     editor.parentElement
   if (!bound) return false
+  // If the boundary wraps more than one editor (a post-comment box with an open
+  // reply composer inside it), an emoji button found here could belong to the
+  // other composer. Bail — the caller falls back to placing the trigger right
+  // after our editor, which is always correct if less pretty.
+  if (bound.querySelectorAll('[contenteditable="true"], textarea').length > 1) return false
   const controls = Array.from(bound.querySelectorAll<HTMLElement>('button, [role="button"]')).filter(
     (c) => !c.closest(`[${OWNED_WRAPPER}]`) && !c.contains(editor),
   )

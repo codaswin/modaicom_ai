@@ -95,8 +95,16 @@ async function handleRelayMessage(message: RelayMessage, sender: chrome.runtime.
     // Best-effort: pop the action popup open now that the relay holds the fresh
     // context, so the user doesn't have to click the toolbar icon. Silently a
     // no-op where the browser doesn't allow it (older Chrome, popup already
-    // open) — the manual open still works.
-    if (accepted) void chrome.action?.openPopup?.().catch(() => undefined)
+    // open, missing user gesture) — the manual open still works. `openPopup`
+    // can *throw synchronously* in that last case, so the try/catch is not
+    // redundant with the trailing `.catch`.
+    if (accepted) {
+      try {
+        void chrome.action?.openPopup?.().catch(() => undefined)
+      } catch {
+        // no-op
+      }
+    }
     return { ok: true, accepted }
   }
   if (message.type === 'CLEAR_RELAY') {
