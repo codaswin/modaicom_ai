@@ -95,7 +95,8 @@ export const ANTHROPIC_PRESET: ProviderPreset = {
   baseUrl: 'https://api.anthropic.com/v1',
   host: 'https://api.anthropic.com/*',
   keyAuth: 'x-api-key',
-  listModels: { path: '/models', parse: parseAnthropicModels },
+  // `limit=1000` returns the whole catalogue in one page (as Gemini does).
+  listModels: { path: '/models?limit=1000', parse: parseAnthropicModels },
   modelFilter: {},
   fallbackModels: [
     { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },

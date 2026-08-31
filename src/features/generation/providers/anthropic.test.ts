@@ -145,7 +145,7 @@ describe('anthropic adapter — listModels', () => {
       })
     })
     const result = await listModels()
-    expect(seenUrl).toBe('https://api.anthropic.com/v1/models')
+    expect(seenUrl).toBe('https://api.anthropic.com/v1/models?limit=1000')
     expect((seenInit.headers as Record<string, string>)['x-api-key']).toBe('sk-ant-123')
     expect(result).toEqual({
       ok: true,

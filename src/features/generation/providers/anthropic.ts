@@ -9,7 +9,7 @@ import type {
 } from '../types'
 import { modelFilter } from './modelFilter'
 import type { ProviderPreset } from './preset'
-import { abortErrorFor, isAbortError, mapHttpError } from './providerHttp'
+import { abortErrorFor, isAbortError, mapHttpError, resolveListUrl, stripTrailingSlash } from './providerHttp'
 
 // The one genuinely different provider (ADR-0012): x-api-key + anthropic-version
 // auth, POST /v1/messages with a top-level `system`, a REQUIRED `max_tokens`,
@@ -51,7 +51,7 @@ function extractText(body: unknown): string | undefined {
 }
 
 export function createAnthropicProvider(preset: ProviderPreset): AIProvider {
-  const base = preset.baseUrl.replace(/\/+$/, '')
+  const base = stripTrailingSlash(preset.baseUrl)
   return {
     id: preset.id,
 
@@ -93,7 +93,7 @@ export function createAnthropicProvider(preset: ProviderPreset): AIProvider {
     async listModels(opts: ListModelsOptions): Promise<ModelListResult> {
       let response: Response
       try {
-        response = await fetch(`${base}${preset.listModels.path}`, {
+        response = await fetch(resolveListUrl(base, preset.listModels.path), {
           method: 'GET',
           headers: headers(opts.apiKey),
           signal: opts.signal,

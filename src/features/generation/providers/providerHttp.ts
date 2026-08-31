@@ -6,6 +6,17 @@
 
 import type { GenerationError } from '../types'
 
+export function stripTrailingSlash(url: string): string {
+  return url.replace(/\/+$/, '')
+}
+
+// A preset's `listModels.path` is appended to its `baseUrl` unless it is itself
+// an absolute URL (Gemini lists via its native endpoint, not the compat one),
+// in which case it is used verbatim.
+export function resolveListUrl(baseUrl: string, path: string): string {
+  return /^https?:\/\//i.test(path) ? path : `${stripTrailingSlash(baseUrl)}${path}`
+}
+
 export function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')
 }

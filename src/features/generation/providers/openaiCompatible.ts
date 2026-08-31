@@ -9,7 +9,7 @@ import type {
 } from '../types'
 import { modelFilter } from './modelFilter'
 import type { KeyAuth, ProviderPreset } from './preset'
-import { abortErrorFor, isAbortError, mapHttpError } from './providerHttp'
+import { abortErrorFor, isAbortError, mapHttpError, resolveListUrl, stripTrailingSlash } from './providerHttp'
 
 // The shared OpenAI-compatible transport (ADR-0012). `generate` and `listModels`
 // are implemented once here and parameterised by a Provider Preset; OpenAI,
@@ -21,14 +21,6 @@ function authHeaders(keyAuth: KeyAuth, apiKey: string): Record<string, string> {
   if (keyAuth === 'x-api-key') return { 'x-api-key': apiKey }
   if (keyAuth === 'x-goog-api-key') return { 'x-goog-api-key': apiKey }
   return { authorization: `Bearer ${apiKey}` }
-}
-
-function stripTrailingSlash(url: string): string {
-  return url.replace(/\/+$/, '')
-}
-
-function resolveListUrl(baseUrl: string, path: string): string {
-  return /^https?:\/\//i.test(path) ? path : `${stripTrailingSlash(baseUrl)}${path}`
 }
 
 function extractText(body: unknown): string | undefined {
