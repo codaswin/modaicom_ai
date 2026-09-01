@@ -129,7 +129,9 @@ crash.log
 *.swp
 *.swo
 *~
-.claude/settings.local.json
+
+# Local agent/assistant configuration
+/.claude/
 
 # Operating-system metadata
 .DS_Store

@@ -71,3 +71,13 @@ ADR-0001's user-controlled-publication guarantee stands: Phase 5 produces a
 automatic engagement. ADR-0002/0003's read-only-extraction, structural-only
 pre-click observation, and no-logging guarantees stand for everything except this
 one explicitly-consented transmission path.
+
+## Amendment — 2026-08-31 (ADR-0012, Phase 9: five providers)
+
+"Switching providers requires a fresh consent" is now realised as **per-provider
+stored consent** (`modaicom.provider.<id>.consent`), not one global record. The
+disclosure string is templated on the selected provider's name and states that
+*that* provider's terms and retention policy govern the transmitted text.
+Switching back to an already-consented provider does not re-prompt. `preflight`
+checks the active provider's record. The substance is unchanged — informed,
+provider-specific, one-time-per-provider consent, checked before any transmission.

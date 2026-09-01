@@ -8,7 +8,7 @@
   An open-source Chrome extension that understands the post or comment you choose,
   drafts a response in your voice, and leaves the final word—and the Post button—to you.
 
-  [![Release](https://img.shields.io/badge/release-v1.0.0-5b3fd6?style=flat-square&logo=github&logoColor=white)](https://github.com/codaswin/modaicom_ai/releases/latest)
+  [![Release](https://img.shields.io/badge/release-v1.1.0-5b3fd6?style=flat-square&logo=github&logoColor=white)](https://github.com/codaswin/modaicom_ai/releases/latest)
   [![CI](https://img.shields.io/github/actions/workflow/status/codaswin/modaicom_ai/ci.yml?branch=main&style=flat-square&label=checks)](https://github.com/codaswin/modaicom_ai/actions/workflows/ci.yml)
   [![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](manifest.config.ts)
   [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](tsconfig.json)
@@ -46,16 +46,23 @@ The name comes from **“modai”**, Tamil for laziness 😄. modaicom removes t
 - Four tones: **Professional**, **Friendly**, **Confident**, and **Thoughtful**.
 - Six intents: **Support**, **Add insight**, **Ask a question**, **Answer**, **Disagree**, and **Congratulate**.
 - Three response lengths: **Short**, **Medium**, and **Long**.
-- Bring-your-own-key OpenAI integration with a configurable model.
+- Bring-your-own-key AI integration with a configurable model.
 - Copy, regenerate, or insert a draft into the exact empty editor that started the session.
 - Protection against overwriting user-written text, stale editors, route changes, and wrong-tab insertion.
 - Accessible keyboard-operable controls, typed failures, and fail-closed LinkedIn DOM adapters.
+
+## New in v1.1
+
+- **Multi-provider BYOK.** Choose **OpenAI**, **Anthropic**, **Groq**, **xAI (Grok)**, or **Google Gemini**. One API-key field, one active provider at a time.
+- **Dynamic model selection.** **Test connection** validates your key and fetches that provider's live model list; a curated fallback list is used when the catalogue can't be read.
+- **Per-provider settings.** API key, model choice, and transmission consent are stored independently for each provider, so switching providers never loses your other configuration.
+- Provider behavior stays behind a single provider abstraction—an OpenAI-compatible provider is added as configuration, not new request code.
 
 ## Install v1
 
 modaicom is distributed as an unpacked Chrome extension for this first open-source release.
 
-1. Download `modaicom-v1.0.0.zip` from the [latest GitHub release](https://github.com/codaswin/modaicom_ai/releases/latest).
+1. Download `modaicom-v1.1.0.zip` from the [latest GitHub release](https://github.com/codaswin/modaicom_ai/releases/latest).
 2. Unzip it somewhere permanent.
 3. Open `chrome://extensions` in Chrome.
 4. Enable **Developer mode**.
@@ -67,12 +74,13 @@ Chrome does not automatically update unpacked extensions. Download a newer relea
 ## Configure AI drafting
 
 1. Open `chrome://extensions` → **modaicom** → **Details** → **Extension options**.
-2. Add a scoped OpenAI API key, preferably with a spend cap.
-3. Choose an OpenAI model. v1 requests network access only to `api.openai.com`; custom endpoints require a source build with the matching host permission.
+2. Choose a provider: **OpenAI**, **Anthropic**, **Groq**, **xAI (Grok)**, or **Google Gemini**.
+3. Add a scoped API key for that provider, preferably with a spend cap.
 4. Read and accept the provider-transmission disclosure.
-5. Save, then use **Test key**.
+5. Click **Test connection**. modaicom validates the key and loads the provider's model list.
+6. Pick a model and **Save**.
 
-modaicom has no backend and no shared API key. Provider usage is billed directly to the key you configure.
+modaicom requests network access only to the API host of the provider you configure, and asks for that host permission at the moment you test the connection. It has no backend and no shared API key—provider usage is billed directly to the key you configure.
 
 ## Privacy by design
 

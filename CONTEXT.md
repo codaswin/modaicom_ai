@@ -133,15 +133,27 @@ The provider-neutral `{ system, user }` strings the generation layer builds from
 _Avoid_: Prompt, messages array, chat request
 
 **AI Provider**:
-The provider-neutral interface `{ id, generate(input, { model, apiKey, signal }) }` returning a discriminated `GenerationResult`. Provider id and model id are opaque strings. No LinkedIn type enters a provider; no provider type (HTTP status, response body, raw exception) leaves one.
+The provider-neutral interface `{ id, generate(input, opts), listModels(opts) }` returning discriminated results. Provider id and model id are opaque strings. From Phase 9, five providers — OpenAI, Gemini, Anthropic, Groq, xAI — where OpenAI/Gemini/Groq/xAI share one OpenAI-compatible transport driven by a Provider Preset and Anthropic is a dedicated adapter. No LinkedIn type enters a provider; no provider type (HTTP status, response body, raw exception) leaves one; provider identity never appears as a branch outside the registry.
 _Avoid_: LLM client, OpenAI client, model SDK
 
+**Provider Preset**:
+The declarative registry entry for one provider — `{ id, label, baseUrl, keyAuth, listModels endpoint + response shape + keep-predicate, modelFilter, fallbackModels }`. All provider divergence that isn't the Anthropic adapter is preset data, not code. Gemini's preset carries a native `listModels` endpoint distinct from its generation endpoint.
+_Avoid_: Provider config, adapter options, plugin manifest
+
+**Model Filter**:
+The declarative rule set in a Provider Preset that keeps only text-generation models — allow/deny model-id patterns for OpenAI-shaped lists, a capability predicate (`supportedGenerationMethods` includes `generateContent`) for Gemini, a near-passthrough for Anthropic. Applied by a pure function. Its job is to drop embedding, image, audio, TTS, moderation, and realtime models.
+_Avoid_: Model allowlist, capability check, model registry
+
+**Connection Test**:
+The single service-worker operation (`TEST_AND_LIST { providerId, apiKey }`) that validates a key against the *selected* provider by calling its model-list endpoint, then returns the filtered models or a typed Generation Error. The key is used for that call only and never persisted from the message. A `401`/`403` means the key is not valid for the selected provider — the shape of the key is never inspected.
+_Avoid_: Auth check, ping, provider probe, key sniff
+
 **Transmission Consent**:
-A recorded `{ providerId, consentedAt }` in `chrome.storage.local` capturing the user's one-time, provider-scoped acknowledgement that selected LinkedIn authored text will be sent to that provider. A hard precondition the service worker checks before any provider request; switching providers requires a fresh consent.
+A recorded `{ consentedAt }` per provider in `chrome.storage.local` (`modaicom.provider.<id>.consent`) capturing the user's one-time acknowledgement that selected LinkedIn authored text will be sent to that provider, whose own terms and retention policy govern it. A hard precondition the service worker checks for the active provider before any provider request; each provider is consented independently and the disclosure names it.
 _Avoid_: Terms acceptance, opt-in flag, telemetry consent
 
 **Provider Configuration**:
-`{ providerId, model, baseUrl? }` in `chrome.storage.local`. The API key is stored separately under a per-provider key, `chrome.storage.local` only, **never `chrome.storage.sync`**, read solely by the service worker.
+The per-provider settings in `chrome.storage.local` (never `chrome.storage.sync`): `modaicom.provider.active` names the selected provider; `modaicom.provider.<id>.apiKey`, `modaicom.provider.<id>.model`, and `modaicom.provider.<id>.consent` are kept independently per provider so switching providers never loses a key or a model choice. The API key is read solely by the service worker; the options page reads only non-secret setup summaries (`hasKey` / `hasConsent` booleans), never key values. The record generation reads is derived — `{ providerId: active, model, baseUrl }` — with `baseUrl` coming from the Provider Preset, not stored. There is no user-facing base-URL field.
 _Avoid_: Settings blob, credentials object
 
 **Generated Draft**:
@@ -157,7 +169,7 @@ A typed Draft Insertion outcome surfaced to the popup as fixed copy: `editor-una
 _Avoid_: Insert error string, silent no-op
 
 **Generation Error**:
-The provider-independent failure union surfaced to the popup as fixed copy: `provider-not-configured`, `api-key-missing`, `transmission-not-consented`, `invalid-preferences` (the selected tone/intent/length failed validation at the service-worker message boundary), `authentication-failed`, `rate-limited`, `request-timeout`, `network-error`, `provider-error`, `invalid-response`, `generation-cancelled`. Raw provider errors, HTTP status text, and response bodies are never surfaced.
+The provider-independent failure union surfaced to the popup as fixed copy: `provider-not-configured`, `api-key-missing`, `transmission-not-consented`, `invalid-preferences` (the selected tone/intent/length failed validation at the service-worker message boundary), `authentication-failed` (also the provider/key mismatch, rendered with settings-page copy), `rate-limited`, `request-timeout`, `network-error`, `provider-error`, `invalid-response`, `model-not-available` (a generation-time model-not-found; the popup routes it to settings), `generation-cancelled`. Every provider adapter maps its HTTP reality onto exactly these kinds. Raw provider errors, HTTP status text, and response bodies are never surfaced.
 _Avoid_: Provider exception, error message string
 
 **Suggestion**:

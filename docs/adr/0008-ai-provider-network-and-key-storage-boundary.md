@@ -66,3 +66,29 @@ Provider failures are mapped to the provider-independent **Generation Error**
 union before leaving the provider module. Raw exceptions, HTTP status text, and
 response bodies are never surfaced to the UI and never logged. A DEV-build
 `console.warn({ kind })` — kind only — is the only permitted breadcrumb.
+
+## Amendment — 2026-08-31 (ADR-0012, Phase 9: five providers)
+
+- **"The key never enters a runtime message" is scoped to the content-script /
+  page boundary.** That clause exists to keep the key away from the content
+  script and the LinkedIn page (no `chrome.*`, hostile-adjacent). Phase 9's
+  setup flow validates a key *before* persisting it, so a single
+  `TEST_AND_LIST { providerId, apiKey }` message carries the key **transiently,
+  options-page → service-worker only, for that one call**. The rule is now: the
+  key never crosses into the content-script or page context, and **the service
+  worker never persists a key it received in a message** — the options page
+  remains the only writer, and it writes only after the test succeeds. An
+  options-page → SW message is the same trust boundary as the options page
+  writing to `chrome.storage.local` directly, which this ADR already permits.
+- **The service worker remains the sole network caller** — the options page
+  never `fetch`es a provider; it asks the SW to run `TEST_AND_LIST`.
+- **Least-privilege hosts extend to five.** `optional_host_permissions` lists
+  `api.openai.com`, `api.groq.com`, `api.x.ai`, `api.anthropic.com`, and
+  `generativelanguage.googleapis.com`; the options page requests the one host
+  for the provider being configured. No `host_permissions` additions, no
+  wildcards, **no CSP change** (still true — the SW `fetch` is not governed by
+  the extension-pages `connect-src`).
+- **Multiple keys at rest.** Up to five plaintext bearer credentials in
+  `chrome.storage.local` instead of one. Same accepted residual risk and same
+  mitigations (disclosure; advise scoped keys with spend caps; per-provider
+  Remove). Only providers the user actually configures hold a key.
