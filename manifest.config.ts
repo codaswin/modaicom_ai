@@ -3,7 +3,7 @@ import { defineManifest } from '@crxjs/vite-plugin'
 export default defineManifest({
   manifest_version: 3,
   name: 'modaicom',
-  version: '1.0.0',
+  version: '1.1.0',
   description: 'AI-assisted LinkedIn responses with the user in control.',
   permissions: ['activeTab', 'storage'],
   host_permissions: ['https://linkedin.com/*', 'https://www.linkedin.com/*'],
