@@ -26,6 +26,17 @@ export default tseslint.config(
     },
   },
   {
+    // Node build/release scripts (e.g. scripts/package.mjs). Not covered by the
+    // TypeScript block above, so without this `eslint .` skips them entirely.
+    extends: [eslint.configs.recommended],
+    files: ['scripts/**/*.{js,mjs,cjs}'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
+  },
+  {
     // ADR-0008: the API key must never be reachable from code that runs near
     // LinkedIn or in the popup. keyStore is service-worker / options-page only.
     files: ['src/content/**/*.{ts,tsx}', 'src/popup/**/*.{ts,tsx}', 'src/features/**/*.{ts,tsx}'],
