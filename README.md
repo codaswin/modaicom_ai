@@ -58,18 +58,25 @@ The name comes from **“modai”**, Tamil for laziness 😄. modaicom removes t
 - **Per-provider settings.** API key, model choice, and transmission consent are stored independently for each provider, so switching providers never loses your other configuration.
 - Provider behavior stays behind a single provider abstraction—an OpenAI-compatible provider is added as configuration, not new request code.
 
-## Install v1
+## Install
 
-modaicom is distributed as an unpacked Chrome extension for this first open-source release.
+modaicom is distributed as a prebuilt, unpacked Chrome extension. You do **not**
+need Node.js, npm, or a build step to install it.
 
-1. Download `modaicom-v1.1.0.zip` from the [latest GitHub release](https://github.com/codaswin/modaicom_ai/releases/latest).
-2. Unzip it somewhere permanent.
-3. Open `chrome://extensions` in Chrome.
-4. Enable **Developer mode**.
-5. Click **Load unpacked** and choose the unzipped folder.
-6. Pin modaicom from Chrome's Extensions menu.
+1. Open the [latest GitHub release](https://github.com/codaswin/modaicom_ai/releases/latest).
+2. Under **Assets**, download **`modaicom-v<version>.zip`** (for example
+   `modaicom-v1.1.0.zip`).
+   > Do **not** download “Source code (zip)” — that is the unbuilt repository and
+   > has no `manifest.json` at its root, so Chrome cannot load it.
+3. Unzip it somewhere permanent. The extracted folder contains `manifest.json`
+   directly at its top level.
+4. Open `chrome://extensions` in Chrome.
+5. Enable **Developer mode**.
+6. Click **Load unpacked** and select the extracted folder.
+7. Pin modaicom from Chrome's Extensions menu.
 
-Chrome does not automatically update unpacked extensions. Download a newer release and replace the folder when upgrading.
+Chrome does not automatically update unpacked extensions. Download a newer
+release and replace the folder when upgrading.
 
 ## Configure AI drafting
 
@@ -137,6 +144,21 @@ npm test
 npm run build
 npm run check
 ```
+
+## Releasing
+
+Maintainers only. The prebuilt release ZIP is produced by CI, not committed.
+
+1. Bump `version` in `package.json`, `package-lock.json`, and `manifest.config.ts`
+   to the new `X.Y.Z`, and update the release references in this README.
+2. Commit as `Release vX.Y.Z` and merge to `main`.
+3. Tag the merge commit `vX.Y.Z` and push the tag.
+4. The [Release workflow](.github/workflows/release.yml) runs `npm run check`,
+   verifies the tag matches `package.json`, packages `dist/` into
+   `modaicom-vX.Y.Z.zip` (with `manifest.json` at the root), and attaches it to
+   the `vX.Y.Z` GitHub Release, creating the release if it does not exist.
+
+To build the same ZIP locally: `npm run package` → `release/modaicom-v<version>.zip`.
 
 ## Architecture
 
